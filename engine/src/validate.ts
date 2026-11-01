@@ -2,7 +2,9 @@ import { rectArea, EPS } from './geometry.js';
 import type { Brief, Room } from './brief.js';
 import type { WallSeg } from './walls.js';
 import type { WindowSeg } from './windows.js';
+import { windowDoorConflicts } from './windows.js';
 import { unreachableCount } from './score.js';
+import { type DoorSeg, unreachableRoomIds, doorsPerRoom } from './doors.js';
 
 export function validate(
   rooms: Room[],
@@ -10,6 +12,7 @@ export function validate(
   windows: WindowSeg[],
   fp: { w: number; h: number },
   brief: Brief,
+  doors?: DoorSeg[],
 ): string[] {
   const problems: string[] = [];
 
@@ -25,13 +28,26 @@ export function validate(
     }
   }
 
-  const unreachable = unreachableCount(rooms);
-  if (unreachable > 0) problems.push(`${unreachable} room(s) unreachable from living`);
+  if (doors) {
+    const stuck = unreachableRoomIds(rooms, doors);
+    if (stuck.length) problems.push(`no door path from living: ${stuck.join(', ')}`);
+    const per = doorsPerRoom(doors);
+    for (const r of rooms) {
+      if (r.type === 'bath' && (per.get(r.id) ?? 0) > 1) {
+        problems.push(`${r.id}: ${per.get(r.id)} doors — a bath takes one`);
+      }
+    }
+  } else {
+    const unreachable = unreachableCount(rooms);
+    if (unreachable > 0) problems.push(`${unreachable} room(s) unreachable from living`);
+  }
 
   for (const r of rooms) {
     if (!r.daylight) continue;
     if (!windows.some((w) => w.roomId === r.id)) problems.push(`${r.id}: daylight room with no window`);
   }
+
+  for (const c of windowDoorConflicts(windows, doors ?? [])) problems.push(c);
 
   if (!walls.some((w) => w.exterior)) problems.push('no exterior walls generated');
   if (brief.wallThickness <= 0) problems.push('wall thickness must be positive');
