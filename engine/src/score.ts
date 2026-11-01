@@ -42,10 +42,14 @@ export function layoutScore(rooms: Room[], fp: Rect, entryType = 'living'): numb
   let s = 0;
   for (const r of rooms) {
     const a = Math.max(r.rect.w, r.rect.h) / Math.min(r.rect.w, r.rect.h);
-    s += Math.max(0, a - ASPECT_SOFT) ** 2 * ASPECT_WEIGHT;
+    // A hall is supposed to be long and thin; judging it like a room would
+    // push the corridor into a stubby square that reaches nothing.
+    s += r.type === 'hall'
+      ? Math.max(0, a - 5) ** 2 * 2
+      : Math.max(0, a - ASPECT_SOFT) ** 2 * ASPECT_WEIGHT;
 
     const m = Math.min(r.rect.w, r.rect.h);
-    if (m < r.minW) s += (r.minW - m) * 25;
+    if (m < r.minW) s += (r.minW - m) * 150;
     if (r.daylight && !touchesBoundary(r.rect, fp)) s += 6;
   }
 
@@ -61,6 +65,33 @@ export function layoutScore(rooms: Room[], fp: Rect, entryType = 'living'): numb
       }
     }
     s += best >= 1.2 ? -3 : 1.5;
+  }
+
+  // A door-valid layout needs somewhere for each door to go. Without a
+  // corridor, every bedroom must touch a circulation room and every bath must
+  // touch a bedroom or circulation — otherwise the bath becomes the hallway,
+  // which is the thing doors.ts refuses to do.
+  // The hall is the spine. A room that touches it gets a door to it; a room
+  // that does not has to be reached through another room, which is how a
+  // living room ends up with three doors.
+  const hall = rooms.find((r) => r.type === 'hall');
+  if (hall) {
+    for (const r of rooms) {
+      if (r.id === hall.id) continue;
+      s += sharedEdge(r.rect, hall.rect) ? -4 : 3;
+    }
+  }
+
+  const circulation = rooms.filter((r) => r.type === 'living' || r.type === 'dining' || r.type === 'hall');
+  const touchesCirc = (r: Room) => circulation.some((c) => c.id !== r.id && sharedEdge(r.rect, c.rect));
+  for (const r of rooms) {
+    if (r.type === 'bedroom' && !touchesCirc(r)) s += 8;
+    if (r.type === 'bath') {
+      const ok =
+        rooms.some((o) => o.type === 'hall' && sharedEdge(r.rect, o.rect)) ||
+        rooms.some((o) => o.type === 'bedroom' && sharedEdge(r.rect, o.rect));
+      if (!ok) s += 10;
+    }
   }
 
   s += unreachableCount(rooms, entryType) * 25;
