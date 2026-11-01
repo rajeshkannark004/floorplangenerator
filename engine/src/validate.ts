@@ -16,6 +16,10 @@ export function validate(
 ): string[] {
   const problems: string[] = [];
 
+  // An infeasible brief comes back as an empty plan; there is no geometry to
+  // check, and generate() already carries the reason.
+  if (!rooms.length) return problems;
+
   const covered = rooms.reduce((s, r) => s + rectArea(r.rect), 0);
   if (Math.abs(covered - fp.w * fp.h) > 0.01) {
     problems.push(`coverage ${covered.toFixed(2)} m² vs footprint ${(fp.w * fp.h).toFixed(2)} m²`);
