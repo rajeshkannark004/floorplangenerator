@@ -37,11 +37,11 @@ const INITIAL: FormState = {
   baths: 2,
   utility: true,
   seed: 7,
-  attempts: 40,
+  attempts: 60,
 };
 
 /** Preview runs at reduced search effort; the CLI keeps the thorough settings. */
-const PREVIEW_EFFORT = 0.35;
+const PREVIEW_EFFORT = 0.6;
 
 function toBrief(f: FormState): Brief {
   const rooms: RoomSpec[] = [
