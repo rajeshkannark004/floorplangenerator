@@ -11,6 +11,8 @@ export interface Plan {
   footprint: { x: number; y: number; w: number; h: number };
   score: number;
   seed: number;
+  /** Set when the brief cannot be built at all; the plan is then not a plan. */
+  infeasible?: string;
 }
 
 const COLORS: Record<string, string> = {
