@@ -1,0 +1,89 @@
+import type { Brief, Room } from './brief.js';
+import type { WallSeg } from './walls.js';
+import type { WindowSeg } from './windows.js';
+
+export interface Plan {
+  rooms: Room[];
+  walls: WallSeg[];
+  windows: WindowSeg[];
+  footprint: { x: number; y: number; w: number; h: number };
+  score: number;
+  seed: number;
+}
+
+const COLORS: Record<string, string> = {
+  living: '#eef3ea', dining: '#f6f1e6', kitchen: '#eaeef4', bedroom: '#f4ecec',
+  bath: '#e9f0f1', utility: '#f0eee9', store: '#f1f1f1',
+};
+
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): string {
+  const fp = plan.footprint;
+  const plotW = brief.plot.w;
+  const plotD = brief.plot.d;
+  const W = plotW * scale + margin * 2;
+  const H = plotD * scale + margin * 2;
+  const ox = margin + brief.setbacks.left * scale;
+  const oy = margin + brief.setbacks.back * scale;
+  const t = brief.wallThickness * scale;
+
+  const px = (x: number) => ox + x * scale;
+  const py = (y: number) => oy + y * scale;
+
+  const parts: string[] = [];
+  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W.toFixed(0)}" height="${H.toFixed(0)}" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" font-family="Helvetica, Arial, sans-serif">`);
+  parts.push(`<rect width="100%" height="100%" fill="#ffffff"/>`);
+
+  // plot boundary
+  parts.push(`<rect x="${px(-brief.setbacks.left).toFixed(1)}" y="${py(-brief.setbacks.back).toFixed(1)}" width="${(plotW * scale).toFixed(1)}" height="${(plotD * scale).toFixed(1)}" fill="none" stroke="#c9c9c9" stroke-width="1" stroke-dasharray="6 5"/>`);
+
+  // rooms
+  for (const r of plan.rooms) {
+    parts.push(`<rect x="${px(r.rect.x).toFixed(1)}" y="${py(r.rect.y).toFixed(1)}" width="${(r.rect.w * scale).toFixed(1)}" height="${(r.rect.h * scale).toFixed(1)}" fill="${COLORS[r.type] ?? '#f4f4f4'}" stroke="none"/>`);
+  }
+
+  // walls
+  for (const w of plan.walls) {
+    const sw = (w.exterior ? t : t * 0.75).toFixed(2);
+    parts.push(`<line x1="${px(w.x1).toFixed(1)}" y1="${py(w.y1).toFixed(1)}" x2="${px(w.x2).toFixed(1)}" y2="${py(w.y2).toFixed(1)}" stroke="#23272b" stroke-width="${sw}" stroke-linecap="square"/>`);
+  }
+
+  // windows: knock out the wall, then draw the frame
+  for (const win of plan.windows) {
+    const vertical = Math.abs(win.x1 - win.x2) < 1e-6;
+    if (vertical) {
+      const y1 = py(Math.min(win.y1, win.y2));
+      const y2 = py(Math.max(win.y1, win.y2));
+      const x = px(win.x1);
+      parts.push(`<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="#ffffff" stroke-width="${(t + 1).toFixed(2)}"/>`);
+      for (const d of [-t / 3, 0, t / 3]) {
+        parts.push(`<line x1="${(x + d).toFixed(2)}" y1="${y1}" x2="${(x + d).toFixed(2)}" y2="${y2}" stroke="#4a7fa5" stroke-width="1.2"/>`);
+      }
+    } else {
+      const x1 = px(Math.min(win.x1, win.x2));
+      const x2 = px(Math.max(win.x1, win.x2));
+      const y = py(win.y1);
+      parts.push(`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="#ffffff" stroke-width="${(t + 1).toFixed(2)}"/>`);
+      for (const d of [-t / 3, 0, t / 3]) {
+        parts.push(`<line x1="${x1}" y1="${(y + d).toFixed(2)}" x2="${x2}" y2="${(y + d).toFixed(2)}" stroke="#4a7fa5" stroke-width="1.2"/>`);
+      }
+    }
+  }
+
+  // labels
+  for (const r of plan.rooms) {
+    const cx = px(r.rect.x + r.rect.w / 2);
+    const cy = py(r.rect.y + r.rect.h / 2);
+    const name = r.type.charAt(0).toUpperCase() + r.type.slice(1);
+    parts.push(`<text x="${cx.toFixed(1)}" y="${(cy - 2).toFixed(1)}" text-anchor="middle" font-size="11" fill="#23272b">${esc(name)}</text>`);
+    parts.push(`<text x="${cx.toFixed(1)}" y="${(cy + 11).toFixed(1)}" text-anchor="middle" font-size="9" fill="#6b7280">${r.rect.w.toFixed(1)}×${r.rect.h.toFixed(1)} m</text>`);
+  }
+
+  // title block
+  parts.push(`<text x="${margin}" y="${(H - 30).toFixed(0)}" font-size="12" fill="#23272b">Plot ${plotW}×${plotD} m · buildable ${fp.w}×${fp.h} m · seed ${plan.seed}</text>`);
+  parts.push(`<text x="${margin}" y="${(H - 14).toFixed(0)}" font-size="10" fill="#6b7280">${plan.rooms.length} rooms · ${plan.walls.length} wall segments · ${plan.windows.length} windows · score ${plan.score.toFixed(2)}</text>`);
+  parts.push('</svg>');
+
+  return parts.join('\n');
+}
