@@ -1,5 +1,6 @@
 import { type Rect, splitRect, aspect } from './geometry.js';
-import { type Room, type RoomType, ADJACENCY, ZONE_OF, type Zone } from './brief.js';
+import { type Room, type RoomType, ADJACENCY, ZONE_OF, type Zone, HALL_DEPTH } from './brief.js';
+import { layoutScore } from './score.js';
 
 export { ADJACENCY, ZONE_OF } from './brief.js';
 export type { Zone } from './brief.js';
@@ -53,9 +54,10 @@ const BLOCK_ASPECT_WEIGHT = 1.5;
 function sideCost(r: Rect, rooms: Room[]): number {
   const a = aspect(r);
   if (rooms.length === 1) {
-    let s = Math.max(0, a - LEAF_ASPECT) ** 2 * LEAF_ASPECT_WEIGHT;
+    const soft = rooms[0].type === 'hall' ? 5 : LEAF_ASPECT;
+    let s = Math.max(0, a - soft) ** 2 * LEAF_ASPECT_WEIGHT;
     const m = Math.min(r.w, r.h);
-    if (m < rooms[0].minW) s += (rooms[0].minW - m) * 25;
+    if (m < rooms[0].minW) s += (rooms[0].minW - m) * 150;
     return s;
   }
   return Math.max(0, a - BLOCK_ASPECT) ** 2 * BLOCK_ASPECT_WEIGHT;
@@ -114,7 +116,7 @@ function unitsOf(rooms: Room[], mode: SplitMode): Item[] {
  * exactly. The search decides which rooms share a block and which axis each
  * block is cut on — both axes are tried, not only the longer one.
  */
-function partition(rect: Rect, rooms: Room[], rng: Rng, mode: SplitMode): Room[] {
+function partition(rect: Rect, rooms: Room[], rng: Rng, mode: SplitMode, effort = 1): Room[] {
   if (rooms.length === 1) return [{ ...rooms[0], rect }];
 
   const units = unitsOf(rooms, mode);
@@ -124,7 +126,7 @@ function partition(rect: Rect, rooms: Room[], rng: Rng, mode: SplitMode): Room[]
   let best: { A: Item[]; B: Item[]; axis: 'x' | 'y'; f: number } | null = null;
   let bestScore = Infinity;
 
-  const tries = Math.min(96, 16 + units.length * 10);
+  const tries = Math.max(6, Math.round(Math.min(96, 16 + units.length * 10) * effort));
   for (let t = 0; t < tries; t++) {
     const order = shuffle(units.slice(), rng);
     let acc = 0;
@@ -166,6 +168,56 @@ function partition(rect: Rect, rooms: Room[], rng: Rng, mode: SplitMode): Room[]
   ];
 }
 
+/**
+ * Place the hall as a spine across the footprint, then partition the rooms into
+ * the blocks above and below it. Letting the ordinary splitter place the hall
+ * is what produced a stub tucked beside the utility, with every other room
+ * reachable only through the living room.
+ */
+function spine(rect: Rect, rooms: Room[], hall: Room, rng: Rng, mode: SplitMode): Room[] {
+  const others = rooms.filter((r) => r.id !== hall.id);
+  if (!others.length) return [{ ...hall, rect }];
+
+  const t = hall.area / rect.w;
+  // A strip that would be thinner than a doorway, or would eat most of the
+  // plan, is not a corridor — fall back to the ordinary partition.
+  if (t < Math.max(hall.minW, HALL_DEPTH * 0.75) || t > rect.h * 0.35) {
+    return partition(rect, rooms, rng, mode);
+  }
+
+  const freeH = rect.h - t;
+  let best: Room[] | null = null;
+  let bestScore = Infinity;
+
+  const tries = 12;
+  for (let k = 0; k < tries; k++) {
+    const order = shuffle(others.slice(), rng);
+    let acc = 0;
+    for (let i = 0; i < order.length - 1; i++) {
+      acc += order[i].area;
+      const hA = acc / rect.w;
+      if (hA < 1.4 || freeH - hA < 1.4) continue;
+
+      const blockA: Rect = { x: rect.x, y: rect.y, w: rect.w, h: hA };
+      const hallRect: Rect = { x: rect.x, y: rect.y + hA, w: rect.w, h: t };
+      const blockB: Rect = { x: rect.x, y: rect.y + hA + t, w: rect.w, h: freeH - hA };
+
+      const placed = [
+        ...partition(blockA, order.slice(0, i + 1), rng, mode, 0.4),
+        ...partition(blockB, order.slice(i + 1), rng, mode, 0.4),
+        { ...hall, rect: hallRect },
+      ];
+      const sc = layoutScore(placed, rect);
+      if (sc < bestScore) {
+        bestScore = sc;
+        best = placed;
+      }
+    }
+  }
+
+  return best ?? partition(rect, rooms, rng, mode);
+}
+
 export function subdivide(
   rect: Rect,
   rooms: Room[],
@@ -174,7 +226,9 @@ export function subdivide(
   mode: SplitMode = 'flat',
 ): Room[] {
   void depth;
-  return partition(rect, rooms, rng, mode);
+  const hall = rooms.find((r) => r.type === 'hall');
+  if (!hall) return partition(rect, rooms, rng, mode);
+  return spine(rect, rooms, hall, rng, mode);
 }
 
 void (0 as unknown as [RoomType, RoomType][]);
