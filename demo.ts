@@ -17,7 +17,7 @@ const brief: Brief = {
   ],
 };
 
-const plan = generate(brief, 7, 600);
+const plan = generate(brief, 7, 150);
 mkdirSync('out', { recursive: true });
 writeFileSync('out/plan.svg', renderSVG(plan, brief));
 
@@ -25,4 +25,5 @@ console.log('score   ', plan.score.toFixed(2));
 console.log('rooms   ', plan.rooms.map((r) => `${r.id} ${r.rect.w.toFixed(2)}x${r.rect.h.toFixed(2)} @${r.rect.x.toFixed(1)},${r.rect.y.toFixed(1)}`).join('\n         '));
 console.log('walls   ', plan.walls.length, 'exterior', plan.walls.filter((w) => w.exterior).length);
 console.log('windows ', plan.windows.map((w) => w.roomId).join(', ') || 'none');
-console.log('problems', validate(plan.rooms, plan.walls, plan.windows, plan.footprint, brief));
+console.log('doors   ', plan.doors.map((d) => `${d.a}${d.b ? '↔' + d.b : '↔outside'}${d.entry ? '(entry)' : ''}`).join(', ') || 'none');
+console.log('problems', validate(plan.rooms, plan.walls, plan.windows, plan.footprint, brief, plan.doors));
