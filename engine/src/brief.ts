@@ -40,6 +40,31 @@ export const DEFAULTS: Record<RoomType, Omit<RoomSpec, 'type' | 'count'>> = {
   store:   { area: 2,  minW: 1.0, daylight: false, windows: 0 },
 };
 
+/**
+ * Functional zones, after Marson & Musse (2010), "Automatic Real-Time
+ * Generation of Floor Plans Based on Squarified Treemaps Algorithm".
+ * The footprint is partitioned into zones first, then each zone into rooms.
+ */
+export type Zone = 'social' | 'service' | 'private';
+
+export const ZONE_OF: Record<RoomType, Zone> = {
+  living: 'social',
+  dining: 'social',
+  kitchen: 'service',
+  utility: 'service',
+  store: 'service',
+  bedroom: 'private',
+  bath: 'private',
+};
+
+/** Room-type pairs that may share a door. Read as a starting point, not verified norms. */
+export const ADJACENCY: [RoomType, RoomType][] = [
+  ['living', 'dining'],
+  ['dining', 'kitchen'],
+  ['living', 'bedroom'],
+  ['bedroom', 'bath'],
+];
+
 export function footprint(b: Brief): Rect {
   return {
     x: 0,
