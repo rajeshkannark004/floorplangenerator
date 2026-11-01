@@ -174,7 +174,7 @@ function partition(rect: Rect, rooms: Room[], rng: Rng, mode: SplitMode, effort 
  * is what produced a stub tucked beside the utility, with every other room
  * reachable only through the living room.
  */
-function spine(rect: Rect, rooms: Room[], hall: Room, rng: Rng, mode: SplitMode): Room[] {
+function spine(rect: Rect, rooms: Room[], hall: Room, rng: Rng, mode: SplitMode, effort = 1): Room[] {
   const others = rooms.filter((r) => r.id !== hall.id);
   if (!others.length) return [{ ...hall, rect }];
 
@@ -189,7 +189,7 @@ function spine(rect: Rect, rooms: Room[], hall: Room, rng: Rng, mode: SplitMode)
   let best: Room[] | null = null;
   let bestScore = Infinity;
 
-  const tries = 12;
+  const tries = Math.max(4, Math.round(12 * effort));
   for (let k = 0; k < tries; k++) {
     const order = shuffle(others.slice(), rng);
     let acc = 0;
@@ -203,8 +203,8 @@ function spine(rect: Rect, rooms: Room[], hall: Room, rng: Rng, mode: SplitMode)
       const blockB: Rect = { x: rect.x, y: rect.y + hA + t, w: rect.w, h: freeH - hA };
 
       const placed = [
-        ...partition(blockA, order.slice(0, i + 1), rng, mode, 0.4),
-        ...partition(blockB, order.slice(i + 1), rng, mode, 0.4),
+        ...partition(blockA, order.slice(0, i + 1), rng, mode, 0.4 * effort),
+        ...partition(blockB, order.slice(i + 1), rng, mode, 0.4 * effort),
         { ...hall, rect: hallRect },
       ];
       const sc = layoutScore(placed, rect);
@@ -224,11 +224,12 @@ export function subdivide(
   rng: Rng,
   depth = 0,
   mode: SplitMode = 'flat',
+  effort = 1,
 ): Room[] {
   void depth;
   const hall = rooms.find((r) => r.type === 'hall');
-  if (!hall) return partition(rect, rooms, rng, mode);
-  return spine(rect, rooms, hall, rng, mode);
+  if (!hall) return partition(rect, rooms, rng, mode, effort);
+  return spine(rect, rooms, hall, rng, mode, effort);
 }
 
 void (0 as unknown as [RoomType, RoomType][]);
