@@ -24,11 +24,20 @@ export function extent(s: { x1: number; y1: number; x2: number; y2: number }): [
 }
 
 function complement(blocked: [number, number][], lo: number, hi: number): [number, number][] {
-  if (!blocked.length) return [[lo, hi]];
-  const sorted = blocked.slice().sort((a, b) => a[0] - b[0]);
+  // Clamp first. A blocker that lies wholly outside [lo, hi] used to widen the
+  // free run past hi, and the window was then centred on that widened run —
+  // which put it in the next room along. Every window is now inside the wall
+  // it was placed on.
+  const clipped = blocked
+    .map(([a, b]) => [Math.max(a, lo), Math.min(b, hi)] as [number, number])
+    .filter(([a, b]) => b - a > EPS)
+    .sort((a, b) => a[0] - b[0]);
+
+  if (!clipped.length) return [[lo, hi]];
+
   const out: [number, number][] = [];
   let cur = lo;
-  for (const [a, b] of sorted) {
+  for (const [a, b] of clipped) {
     if (a > cur + EPS) out.push([cur, a]);
     cur = Math.max(cur, b);
   }
