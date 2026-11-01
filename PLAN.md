@@ -63,6 +63,39 @@ footprint. The form therefore never has to be arithmetically perfect.
 Same seed + same brief = same plan. Never break that; it is what makes the
 engine tunable.
 
+## Stage 6 design — doors and circulation
+
+Modelled on Marson & Musse (2010), *Automatic Real-Time Generation of Floor
+Plans Based on Squarified Treemaps Algorithm*, Int. J. Computer Games
+Technology, doi:10.1155/2010/624817 (open access, CC BY 3.0).
+
+Doors are **not** a spanning tree over all shared edges. Three steps:
+
+1. **Allowed-adjacency table.** A fixed table of which room types may connect
+   directly (living–dining yes, kitchen–bedroom no). A door is placed only where
+   two rooms share an edge *and* the type pair is allowed. This is what stops
+   the current "reachable = shares a wall" from producing a bathroom opening
+   onto a kitchen.
+2. **Connectivity from the outside.** Build the graph of allowed doors plus the
+   entry. Walk it from the entry; every room reached is done.
+3. **Corridor as fallback, not as a stage.** For rooms still unreachable: take
+   the internal-wall graph, drop exterior walls and the living room's own walls,
+   A* from the living room to each unreachable room, then extrude the path
+   perpendicular to make a corridor of usable width, and cut doors onto it. If
+   extruding drops any room below its minimum area, redistribute globally and
+   re-derive.
+
+Consequences to accept before writing the code:
+
+- **The corridor decision is closed: corridors exist, but only where step 3
+  fires.** This changes `subdivide.ts` (reserve corridor area) and `score.ts`
+  (score the post-corridor layout, not the raw partition).
+- `validate.ts` gains: every room reachable through allowed doors or corridor,
+  no disallowed type pair sharing a door, door clear of corners and of the
+  shared segment's ends.
+- The allowed-adjacency table is the new data file. It must live beside
+  `brief.ts` and be treated like the room defaults: plausible, not verified.
+
 ## Roadmap
 
 | Stage | Work | Done when |
@@ -73,7 +106,7 @@ engine tunable.
 | 3 | Windows | Only on exterior walls, every daylight room covered |
 | 4 | Validator | Returns violations, never throws |
 | 5 | SVG renderer | Readable plan sheet with labels and dimensions |
-| 6 | Doors | Adjacency graph, spanning tree from entry, doors on shared segments |
+| 6 | Doors + circulation | Allowed-adjacency table, doors on allowed shared segments, connectivity from entry, corridor fallback for unreachable rooms |
 | 7 | React UI | Form + live preview, engine imported directly |
 | 8 | Export + presets | SVG/JSON download, 1BHK/2BHK/3BHK presets, seed control |
 
@@ -81,10 +114,16 @@ Stages 0–5 are done. 6 onwards is the remaining work.
 
 ## Open decisions
 
-- Corridors: v0 connects rooms directly through shared walls. Adding a corridor
-  changes the partitioner, so decide before stage 6.
+- **Zone-first split.** Marson & Musse squarify *zones* (social / service /
+  private) first, then squarify rooms inside each zone. The current partitioner
+  splits flat, one level. Zone-first is the likely fix for the elongated-room
+  problem, but it is a `subdivide.ts` rewrite, not a scoring tweak — decide
+  before or alongside stage 6, since it changes the wall graph doors attach to.
+  Note the paper's own stated limitation: the initial zone split can still leave
+  rooms far from square, so this improves the aspect problem without closing it.
 - Room defaults in `brief.ts` are plausible starting values, **not** verified
   building norms. Check against the applicable local rules before trusting them.
+  The same warning applies to the allowed-adjacency table.
 - Whether the UI renders SVG or draws to canvas — SVG for now, since it is
   exportable as-is.
 
