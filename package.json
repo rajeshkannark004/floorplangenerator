@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "tsc -p tsconfig.json && node --test dist/tests/",
+    "stress": "tsc -p tsconfig.json && node dist/tools/stress.js",
+    "build": "tsc -p tsconfig.json"
   },
   "keywords": [],
   "author": "",
