@@ -25,11 +25,11 @@ attempts, effort)`. Effort scales the spine search and the split search together
 |---|---|---|---|
 | 150 | 1.0 | ~29 s | the old default, no longer used |
 | 120 | 0.5 | ~15 s | `demo.ts` default |
-| 40 | 0.35 | ~4 s | UI preview; can return a plan with a min-width violation |
+| 60 | 0.6 | ~7 s | UI preview |
 
-The preview deliberately trades search depth for latency. A low-effort run is a
-valid plan or a plan with a reported violation — never a silent bad plan — but it
-does mean the UI sometimes shows a problem the CLI would have searched past.
+The preview deliberately trades search depth for latency. At the preview settings
+7 of 8 seeds validate clean; the eighth surfaces its violations in the UI rather
+than hiding them. The CLI's 120 attempts at effort 0.5 is cleaner and slower.
 
 ## Splitter measurements
 
@@ -78,8 +78,9 @@ rather than today's output.
 - Full-effort generation is still slow: ~15 s at 120 attempts, ~29 s at 150.
   Ranking on shape first and deriving walls and doors only for the top few
   candidates is the real fix; the effort knob only masks it.
-- The UI preview can show a min-width violation at 40 attempts / 0.35 effort.
-  Raising the default attempts would hide it at the cost of latency.
+- At the preview settings (60 attempts, effort 0.6) roughly one seed in eight
+  comes back with a min-width violation. That is the price of a ~7 s preview; the
+  CLI's 120 attempts at effort 0.5 is the setting to trust.
 - Rooms shrink about 10% to pay for the corridor. That is correct but it is a
   real trade against target areas.
 - The entry door takes the longest exterior run on the living room, preferring
