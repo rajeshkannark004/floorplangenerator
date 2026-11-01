@@ -10,5 +10,5 @@
     "declaration": true,
     "types": ["node"]
   },
-  "include": ["engine/**/*.ts", "demo.ts"]
+  "include": ["engine/**/*.ts", "demo.ts", "tools/**/*.ts", "tests/**/*.ts"]
 }
