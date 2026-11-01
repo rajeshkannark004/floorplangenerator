@@ -1,11 +1,13 @@
 import type { Brief, Room } from './brief.js';
 import type { WallSeg } from './walls.js';
 import type { WindowSeg } from './windows.js';
+import type { DoorSeg } from './doors.js';
 
 export interface Plan {
   rooms: Room[];
   walls: WallSeg[];
   windows: WindowSeg[];
+  doors: DoorSeg[];
   footprint: { x: number; y: number; w: number; h: number };
   score: number;
   seed: number;
@@ -13,10 +15,26 @@ export interface Plan {
 
 const COLORS: Record<string, string> = {
   living: '#eef3ea', dining: '#f6f1e6', kitchen: '#eaeef4', bedroom: '#f4ecec',
-  bath: '#e9f0f1', utility: '#f0eee9', store: '#f1f1f1',
+  bath: '#e9f0f1', utility: '#f0eee9', store: '#f1f1f1', hall: '#efede6',
 };
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * Quarter-circle swing, sampled explicitly. SVG arc flags depend on the sweep
+ * direction of each particular pair of endpoints, and getting one flag wrong
+ * silently bulges the swing through the wall — a polyline cannot do that.
+ * Angles: 0 = +x (right), 90 = +y (down, since SVG y grows downward).
+ */
+function swingPath(cx: number, cy: number, rad: number, a0: number, a1: number, steps = 14): string {
+  const pts: string[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = ((a0 + (a1 - a0) * (i / steps)) * Math.PI) / 180;
+    pts.push(`${(cx + rad * Math.cos(t)).toFixed(2)} ${(cy + rad * Math.sin(t)).toFixed(2)}`);
+  }
+  return `M ${pts[0]} L ${pts.slice(1).join(' L ')}`;
+}
+
 
 export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): string {
   const fp = plan.footprint;
@@ -47,6 +65,48 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): st
   for (const w of plan.walls) {
     const sw = (w.exterior ? t : t * 0.75).toFixed(2);
     parts.push(`<line x1="${px(w.x1).toFixed(1)}" y1="${py(w.y1).toFixed(1)}" x2="${px(w.x2).toFixed(1)}" y2="${py(w.y2).toFixed(1)}" stroke="#23272b" stroke-width="${sw}" stroke-linecap="square"/>`);
+  }
+
+  // doors: knock the wall out, then draw the leaf and its swing. The swing
+  // goes into the room the door serves, and the hinge sits at the low end of
+  // the opening — swinging every leaf to +x/+y swept half of them through the
+  // wall they sit in.
+  const roomById = new Map(plan.rooms.map((r) => [r.id, r]));
+  for (const d of plan.doors ?? []) {
+    const rad = d.width * scale;
+    const ink = d.entry ? '#7a4a1f' : '#23272b';
+    const ra = roomById.get(d.a);
+    const rb = d.b ? roomById.get(d.b) : undefined;
+    // Swing into the room, never into the corridor. Falling back to "the
+    // smaller room" alone sent every hall door swinging back out into the hall,
+    // because the hall is smaller than the bedrooms it serves.
+    const smaller = (x: typeof ra, y: typeof rb) =>
+      !y ? x : !x ? y : x.rect.w * x.rect.h <= y.rect.w * y.rect.h ? x : y;
+    let target = ra && rb ? smaller(ra, rb) : ra ?? rb;
+    if (ra?.type === 'hall' && rb) target = rb;
+    else if (rb?.type === 'hall' && ra) target = ra;
+    if (!target) continue;
+
+    if (d.axis === 'v') {
+      const x = px(d.x1);
+      const yTop = py(Math.min(d.y1, d.y2));
+      const yBot = py(Math.max(d.y1, d.y2));
+      const side = target.rect.x + target.rect.w / 2 > d.x1 ? 1 : -1;
+      const a0 = side === 1 ? 0 : 180;
+      parts.push(`<line x1="${x}" y1="${yTop}" x2="${x}" y2="${yBot}" stroke="#ffffff" stroke-width="${(t + 1).toFixed(2)}"/>`);
+      parts.push(`<line x1="${x}" y1="${yTop}" x2="${(x + side * rad).toFixed(2)}" y2="${yTop}" stroke="${ink}" stroke-width="1.2"/>`);
+      parts.push(`<path d="${swingPath(x, yTop, rad, a0, 90)}" fill="none" stroke="#9aa3ab" stroke-width="0.8"/>`);
+    } else {
+      const y = py(d.y1);
+      const xL = px(Math.min(d.x1, d.x2));
+      const xR = px(Math.max(d.x1, d.x2));
+      const side = target.rect.y + target.rect.h / 2 > d.y1 ? 1 : -1;
+      const a0 = side === 1 ? 90 : 270;
+      const a1 = side === 1 ? 0 : 360;
+      parts.push(`<line x1="${xL}" y1="${y}" x2="${xR}" y2="${y}" stroke="#ffffff" stroke-width="${(t + 1).toFixed(2)}"/>`);
+      parts.push(`<line x1="${xL}" y1="${y}" x2="${xL}" y2="${(y + side * rad).toFixed(2)}" stroke="${ink}" stroke-width="1.2"/>`);
+      parts.push(`<path d="${swingPath(xL, y, rad, a0, a1)}" fill="none" stroke="#9aa3ab" stroke-width="0.8"/>`);
+    }
   }
 
   // windows: knock out the wall, then draw the frame
@@ -82,7 +142,7 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): st
 
   // title block
   parts.push(`<text x="${margin}" y="${(H - 30).toFixed(0)}" font-size="12" fill="#23272b">Plot ${plotW}×${plotD} m · buildable ${fp.w}×${fp.h} m · seed ${plan.seed}</text>`);
-  parts.push(`<text x="${margin}" y="${(H - 14).toFixed(0)}" font-size="10" fill="#6b7280">${plan.rooms.length} rooms · ${plan.walls.length} wall segments · ${plan.windows.length} windows · score ${plan.score.toFixed(2)}</text>`);
+  parts.push(`<text x="${margin}" y="${(H - 14).toFixed(0)}" font-size="10" fill="#6b7280">${plan.rooms.length} rooms · ${plan.walls.length} wall segments · ${plan.windows.length} windows · ${(plan.doors ?? []).length} doors · score ${plan.score.toFixed(2)}</text>`);
   parts.push('</svg>');
 
   return parts.join('\n');
