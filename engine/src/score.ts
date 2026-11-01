@@ -1,6 +1,6 @@
 import { type Rect, sharedEdge, touchesBoundary } from './geometry.js';
 import type { Room } from './brief.js';
-import { ADJACENCY } from './subdivide.js';
+import { ADJACENCY } from './brief.js';
 
 export function adjacencyGraph(rooms: Room[]): Map<string, string[]> {
   const adj = new Map<string, string[]>();
@@ -34,11 +34,15 @@ export function unreachableCount(rooms: Room[], entryType = 'living'): number {
   return rooms.length - seen.size;
 }
 
+/** Aspect ratio penalty: quadratic in the excess past 1.5, so slivers cost real score. */
+export const ASPECT_SOFT = 1.5;
+export const ASPECT_WEIGHT = 8;
+
 export function layoutScore(rooms: Room[], fp: Rect, entryType = 'living'): number {
   let s = 0;
   for (const r of rooms) {
     const a = Math.max(r.rect.w, r.rect.h) / Math.min(r.rect.w, r.rect.h);
-    s += Math.max(0, a - 1.8) ** 2 * 2;
+    s += Math.max(0, a - ASPECT_SOFT) ** 2 * ASPECT_WEIGHT;
 
     const m = Math.min(r.rect.w, r.rect.h);
     if (m < r.minW) s += (r.minW - m) * 25;
