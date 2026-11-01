@@ -7,8 +7,16 @@ export const segLen = (w: { x1: number; y1: number; x2: number; y2: number }) =>
   Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
 
 function complement(covered: [number, number][], lo: number, hi: number): [number, number][] {
-  if (!covered.length) return [[lo, hi]];
-  const sorted = covered.slice().sort((a, b) => a[0] - b[0]);
+  // Clamp to the run, as windows.ts does. An interval that reaches outside
+  // [lo, hi] would otherwise widen the "uncovered" gap and emit an exterior
+  // wall segment running past the room it belongs to.
+  const clipped = covered
+    .map(([a, b]) => [Math.max(a, lo), Math.min(b, hi)] as [number, number])
+    .filter(([a, b]) => b - a > EPS)
+    .sort((a, b) => a[0] - b[0]);
+
+  if (!clipped.length) return [[lo, hi]];
+  const sorted = clipped;
   const out: [number, number][] = [];
   let cur = lo;
   for (const [a, b] of sorted) {
