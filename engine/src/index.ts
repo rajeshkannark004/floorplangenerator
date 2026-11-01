@@ -15,13 +15,13 @@ export * from './doors.js';
 export * from './score.js';
 
 /** Generate `attempts` seeded candidates and keep the best-scoring one. */
-export function generate(brief: Brief, seed = 1, attempts = 400): Plan {
+export function generate(brief: Brief, seed = 1, attempts = 400, effort = 1): Plan {
   const fp = footprint(brief);
   let best: Plan | null = null;
 
   for (let i = 0; i < attempts; i++) {
     const rng = mulberry32(seed * 100003 + i);
-    const rooms = subdivide(fp, normaliseAreas(withHall(program(brief), fp), fp), rng);
+    const rooms = subdivide(fp, normaliseAreas(withHall(program(brief), fp), fp), rng, 0, 'flat', effort);
     const walls = buildWalls(rooms);
     const doors = placeDoors(rooms, walls, fp, mulberry32(seed * 7919 + i));
 
