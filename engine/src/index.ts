@@ -1,4 +1,5 @@
-import { type Brief, footprint, program, normaliseAreas, withHall } from './brief.js';
+import { type Brief, footprint, program, normaliseAreas, withHall, type Room } from './brief.js';
+import type { Rect } from './geometry.js';
 import { subdivide, mulberry32 } from './subdivide.js';
 import { layoutScore } from './score.js';
 import { buildWalls } from './walls.js';
@@ -14,14 +15,43 @@ export * from './windows.js';
 export * from './doors.js';
 export * from './score.js';
 
-/** Generate `attempts` seeded candidates and keep the best-scoring one. */
-export function generate(brief: Brief, seed = 1, attempts = 400, effort = 1): Plan {
-  const fp = footprint(brief);
+/**
+ * A brief can be impossible before any search runs: the rooms need more floor
+ * area than the setbacks leave, or a room's minimum width does not fit the
+ * footprint at all. Say so plainly rather than returning a broken plan.
+ */
+function infeasibleReason(brief: Brief, fp: Rect): string | null {
+  // Counts the rooms the brief asks for, not the hall. The hall is optional and
+  // only added when the door rules need it, so charging it here would reject
+  // briefs that fit perfectly well without circulation.
+  const need = brief.rooms.reduce((s, spec) => s + spec.area * spec.count, 0);
+  const have = fp.w * fp.h;
+
+  if (need > have + 1e-9) {
+    return `programme needs ${need.toFixed(1)} m² but only ${have.toFixed(1)} m² is buildable`;
+  }
+
+  const narrowest = Math.min(fp.w, fp.h);
+  const tooWide = brief.rooms.find((spec) => spec.minW > narrowest + 1e-9);
+  if (tooWide) {
+    return `${tooWide.type} needs ${tooWide.minW} m clear, but the buildable area is only ${narrowest.toFixed(1)} m across`;
+  }
+
+  return null;
+}
+
+function problemsOf(plan: Plan, brief: Brief): string[] {
+  return validate(plan.rooms, plan.walls, plan.windows, plan.footprint, brief, plan.doors);
+}
+
+/** The best of `attempts` seeded candidates, optionally with a circulation spine. */
+function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: number, useHall: boolean): Plan {
+  const rooms0: Room[] = useHall ? withHall(program(brief), fp) : program(brief);
   let best: Plan | null = null;
 
   for (let i = 0; i < attempts; i++) {
     const rng = mulberry32(seed * 100003 + i);
-    const rooms = subdivide(fp, normaliseAreas(withHall(program(brief), fp), fp), rng, 0, 'flat', effort);
+    const rooms = subdivide(fp, normaliseAreas(rooms0, fp), rng, 0, 'flat', effort);
     const walls = buildWalls(rooms);
     const doors = placeDoors(rooms, walls, fp, mulberry32(seed * 7919 + i));
 
@@ -47,6 +77,33 @@ export function generate(brief: Brief, seed = 1, attempts = 400, effort = 1): Pl
   const plan = best!;
   plan.windows = placeWindows(plan.rooms, plan.walls, brief.windowWidth, plan.doors);
   return plan;
+}
+
+/**
+ * Generate `attempts` seeded candidates and keep the best-scoring one.
+ *
+ * The hall is not assumed. A small programme can often work without one, and
+ * forcing a corridor into a 1BHK is what squeezed every room below its minimum
+ * width. Try the plain programme first; fall back to the spine only when the
+ * door rules cannot be satisfied without it.
+ */
+export function generate(brief: Brief, seed = 1, attempts = 400, effort = 1): Plan {
+  const fp = footprint(brief);
+
+  const reason = infeasibleReason(brief, fp);
+  if (reason) {
+    return { rooms: [], walls: [], windows: [], doors: [], footprint: fp, score: 0, seed, infeasible: reason };
+  }
+
+  const plain = search(brief, fp, seed, attempts, effort, false);
+  const plainProblems = problemsOf(plain, brief);
+  if (!plainProblems.length) return plain;
+
+  const spined = search(brief, fp, seed, attempts, effort, true);
+  const spinedProblems = problemsOf(spined, brief);
+  if (!spinedProblems.length) return spined;
+
+  return plainProblems.length <= spinedProblems.length ? plain : spined;
 }
 
 export { validate };
