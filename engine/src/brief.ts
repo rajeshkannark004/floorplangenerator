@@ -1,6 +1,6 @@
 import type { Rect } from './geometry.js';
 
-export type RoomType = 'living' | 'dining' | 'kitchen' | 'bedroom' | 'bath' | 'utility' | 'store';
+export type RoomType = 'living' | 'dining' | 'kitchen' | 'bedroom' | 'bath' | 'utility' | 'store' | 'hall';
 
 export interface RoomSpec {
   type: RoomType;
@@ -38,6 +38,9 @@ export const DEFAULTS: Record<RoomType, Omit<RoomSpec, 'type' | 'count'>> = {
   bath:    { area: 4,  minW: 1.5, daylight: false, windows: 0 },
   utility: { area: 3,  minW: 1.2, daylight: true,  windows: 1 },
   store:   { area: 2,  minW: 1.0, daylight: false, windows: 0 },
+  // A hall is a corridor: it is meant to be long, so it is exempt from the
+  // usual aspect penalty. Area is a starting value, like the rest.
+  hall:    { area: 4,  minW: 1.0, daylight: false, windows: 0 },
 };
 
 /**
@@ -45,6 +48,9 @@ export const DEFAULTS: Record<RoomType, Omit<RoomSpec, 'type' | 'count'>> = {
  * Generation of Floor Plans Based on Squarified Treemaps Algorithm".
  * The footprint is partitioned into zones first, then each zone into rooms.
  */
+/** Corridor depth in metres. The hall spans the buildable width. */
+export const HALL_DEPTH = 1.2;
+
 export type Zone = 'social' | 'service' | 'private';
 
 export const ZONE_OF: Record<RoomType, Zone> = {
@@ -55,6 +61,7 @@ export const ZONE_OF: Record<RoomType, Zone> = {
   store: 'service',
   bedroom: 'private',
   bath: 'private',
+  hall: 'service',
 };
 
 /** Room-type pairs that may share a door. Read as a starting point, not verified norms. */
@@ -63,6 +70,14 @@ export const ADJACENCY: [RoomType, RoomType][] = [
   ['dining', 'kitchen'],
   ['living', 'bedroom'],
   ['bedroom', 'bath'],
+  ['kitchen', 'utility'],
+  ['hall', 'living'],
+  ['hall', 'dining'],
+  ['hall', 'kitchen'],
+  ['hall', 'bedroom'],
+  ['hall', 'bath'],
+  ['hall', 'utility'],
+  ['hall', 'store'],
 ];
 
 export function footprint(b: Brief): Rect {
@@ -90,6 +105,24 @@ export function program(b: Brief): Room[] {
     }
   }
   return rooms;
+}
+
+/**
+ * Add the circulation spine. Rooms reached only through another room are not
+ * habitable, and without a corridor the only way to the far bedroom is through
+ * a bath. Injecting a hall as an ordinary room lets the existing partitioner
+ * and the existing door rules place it — no separate corridor geometry.
+ */
+export function withHall(rooms: Room[], fp: Rect): Room[] {
+  if (rooms.some((r) => r.type === 'hall')) return rooms;
+  const d = DEFAULTS.hall;
+  // The hall is a spine: it runs the full width of the buildable area, so its
+  // area is set by that width times a corridor depth, not by a fixed number.
+  const area = Math.max(d.area, HALL_DEPTH * fp.w);
+  return [
+    ...rooms,
+    { id: 'hall-1', type: 'hall', area, minW: d.minW, daylight: d.daylight, windows: d.windows, rect: { x: 0, y: 0, w: 0, h: 0 } },
+  ];
 }
 
 /** Scale target areas so the programme exactly fills the buildable footprint. */
