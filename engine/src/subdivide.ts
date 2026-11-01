@@ -1,14 +1,22 @@
 import { type Rect, splitRect, aspect } from './geometry.js';
-import type { Room } from './brief.js';
+import { type Room, type RoomType, ADJACENCY, ZONE_OF, type Zone } from './brief.js';
+
+export { ADJACENCY, ZONE_OF } from './brief.js';
+export type { Zone } from './brief.js';
 
 export type Rng = () => number;
 
-export const ADJACENCY: [string, string][] = [
-  ['living', 'dining'],
-  ['dining', 'kitchen'],
-  ['living', 'bedroom'],
-  ['bedroom', 'bath'],
-];
+/**
+ * How the footprint is partitioned.
+ *
+ * 'flat'  — one recursive split over the rooms. Measured better on the 1BHK
+ *           sample (see PROGRESS.md): max aspect 1.89, no room over 2.0.
+ * 'zoned' — Marson & Musse's two-level split: squarify social/service/private
+ *           zones first, then each zone into its rooms. Kept because it is the
+ *           published method and it produces more coherent zoning, but it
+ *           measured worse on shape: max aspect 2.25, four rooms over 1.8.
+ */
+export type SplitMode = 'flat' | 'zoned';
 
 export function mulberry32(seed: number): Rng {
   let a = seed >>> 0;
@@ -28,67 +36,145 @@ function shuffle<T>(arr: T[], rng: Rng): T[] {
   return arr;
 }
 
-function splitScore(rect: Rect, axis: 'x' | 'y', f: number, A: Room[], B: Room[]): number {
+/** Aspect below which a finished room is considered fine. */
+const LEAF_ASPECT = 1.5;
+const LEAF_ASPECT_WEIGHT = 8;
+/** A block that will be cut again is only stopped from going pathological. */
+const BLOCK_ASPECT = 3;
+const BLOCK_ASPECT_WEIGHT = 1.5;
+
+/**
+ * Cost of one side of a cut. A finished room is judged on its shape; an
+ * intermediate block is not, because thin blocks are how small rooms get a
+ * usable width. Judging every intermediate region on its shape was what pushed
+ * baths to 3.5 x 1.4 — the splitter was avoiding the thin strip that a bath
+ * actually wants.
+ */
+function sideCost(r: Rect, rooms: Room[]): number {
+  const a = aspect(r);
+  if (rooms.length === 1) {
+    let s = Math.max(0, a - LEAF_ASPECT) ** 2 * LEAF_ASPECT_WEIGHT;
+    const m = Math.min(r.w, r.h);
+    if (m < rooms[0].minW) s += (rooms[0].minW - m) * 25;
+    return s;
+  }
+  return Math.max(0, a - BLOCK_ASPECT) ** 2 * BLOCK_ASPECT_WEIGHT;
+}
+
+function cutCost(rect: Rect, axis: 'x' | 'y', f: number, A: Room[], B: Room[]): number {
   const [ra, rb] = splitRect(rect, axis, f);
-  let s = Math.abs(f - 0.5) * 2;
-  s += Math.max(0, aspect(ra) - 2) * 0.6;
-  s += Math.max(0, aspect(rb) - 2) * 0.6;
+
+  let s = sideCost(ra, A) + sideCost(rb, B);
+  s += Math.abs(f - 0.5) * 0.6;
 
   for (const [p, q] of ADJACENCY) {
     const ap = A.some((r) => r.type === p);
     const aq = A.some((r) => r.type === q);
     const bp = B.some((r) => r.type === p);
     const bq = B.some((r) => r.type === q);
-    if ((ap && bq) || (aq && bp)) s += 1.2;
-  }
-
-  if (A.length === 1) {
-    const m = Math.min(ra.w, ra.h);
-    if (m < A[0].minW) s += (A[0].minW - m) * 3;
-  }
-  if (B.length === 1) {
-    const m = Math.min(rb.w, rb.h);
-    if (m < B[0].minW) s += (B[0].minW - m) * 3;
+    if ((ap && bq) || (aq && bp)) s += 0.8;
   }
   return s;
 }
 
-/** Recursive area-proportional partition. Every room lands on its target area. */
-export function subdivide(rect: Rect, rooms: Room[], rng: Rng, depth = 0): Room[] {
+interface Item {
+  area: number;
+  rooms: Room[];
+}
+
+function zoneGroups(rooms: Room[]): Item[] {
+  const byZone = new Map<Zone, Item>();
+  for (const r of rooms) {
+    const z = ZONE_OF[r.type];
+    let g = byZone.get(z);
+    if (!g) {
+      g = { area: 0, rooms: [] };
+      byZone.set(z, g);
+    }
+    g.area += r.area;
+    g.rooms.push(r);
+  }
+  return [...byZone.values()].sort((a, b) => b.area - a.area);
+}
+
+/**
+ * What we partition at this level: in 'zoned' mode the zones while the set
+ * spans more than one, otherwise the individual rooms.
+ */
+function unitsOf(rooms: Room[], mode: SplitMode): Item[] {
+  if (mode === 'zoned') {
+    const zones = new Set(rooms.map((r) => ZONE_OF[r.type]));
+    if (zones.size > 1) return zoneGroups(rooms);
+  }
+  return rooms.map((r) => ({ area: r.area, rooms: [r] }));
+}
+
+/**
+ * Recursive area-proportional partition. Every room lands on its target area
+ * exactly. The search decides which rooms share a block and which axis each
+ * block is cut on — both axes are tried, not only the longer one.
+ */
+function partition(rect: Rect, rooms: Room[], rng: Rng, mode: SplitMode): Room[] {
   if (rooms.length === 1) return [{ ...rooms[0], rect }];
 
-  const total = rooms.reduce((s, r) => s + r.area, 0);
-  const axis: 'x' | 'y' = rect.w >= rect.h ? 'x' : 'y';
+  const units = unitsOf(rooms, mode);
+  if (units.length < 2) return rooms.map((r) => ({ ...r, rect }));
 
-  let best: { A: Room[]; B: Room[]; f: number } | null = null;
+  const total = units.reduce((s, u) => s + u.area, 0);
+  let best: { A: Item[]; B: Item[]; axis: 'x' | 'y'; f: number } | null = null;
   let bestScore = Infinity;
 
-  const tries = Math.min(48, 8 + rooms.length * 4);
+  const tries = Math.min(96, 16 + units.length * 10);
   for (let t = 0; t < tries; t++) {
-    const order = shuffle(rooms.slice(), rng);
+    const order = shuffle(units.slice(), rng);
     let acc = 0;
     for (let i = 0; i < order.length - 1; i++) {
       acc += order[i].area;
       const f = acc / total;
-      if (f < 0.28 || f > 0.72) continue;
+      if (f < 0.15 || f > 0.85) continue;
       const A = order.slice(0, i + 1);
       const B = order.slice(i + 1);
-      const sc = splitScore(rect, axis, f, A, B) + rng() * 0.35;
-      if (sc < bestScore) {
-        bestScore = sc;
-        best = { A, B, f };
+      const roomsA = A.flatMap((u) => u.rooms);
+      const roomsB = B.flatMap((u) => u.rooms);
+      for (const axis of ['x', 'y'] as const) {
+        const sc = cutCost(rect, axis, f, roomsA, roomsB) + rng() * 0.3;
+        if (sc < bestScore) {
+          bestScore = sc;
+          best = { A, B, axis, f };
+        }
       }
     }
   }
 
   if (!best) {
-    const sorted = rooms.slice().sort((a, b) => b.area - a.area);
+    const sorted = units.slice().sort((a, b) => b.area - a.area);
     const half = Math.max(1, Math.floor(sorted.length / 2));
     const A = sorted.slice(0, half);
     const B = sorted.slice(half);
-    best = { A, B, f: A.reduce((s, r) => s + r.area, 0) / total };
+    best = {
+      A,
+      B,
+      axis: rect.w >= rect.h ? 'x' : 'y',
+      f: A.reduce((s, u) => s + u.area, 0) / total,
+    };
   }
 
-  const [ra, rb] = splitRect(rect, axis, best.f);
-  return [...subdivide(ra, best.A, rng, depth + 1), ...subdivide(rb, best.B, rng, depth + 1)];
+  const [ra, rb] = splitRect(rect, best.axis, best.f);
+  return [
+    ...partition(ra, best.A.flatMap((u) => u.rooms), rng, mode),
+    ...partition(rb, best.B.flatMap((u) => u.rooms), rng, mode),
+  ];
 }
+
+export function subdivide(
+  rect: Rect,
+  rooms: Room[],
+  rng: Rng,
+  depth = 0,
+  mode: SplitMode = 'flat',
+): Room[] {
+  void depth;
+  return partition(rect, rooms, rng, mode);
+}
+
+void (0 as unknown as [RoomType, RoomType][]);
