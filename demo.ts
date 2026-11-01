@@ -17,7 +17,14 @@ const brief: Brief = {
   ],
 };
 
-const plan = generate(brief, 7, 150);
+// seed, attempts and search effort are optional: node dist/demo.js 7 120 0.5
+const seed = Number(process.argv[2] ?? 7);
+const attempts = Number(process.argv[3] ?? 120);
+const effort = Number(process.argv[4] ?? 0.5);
+
+const started = Date.now();
+const plan = generate(brief, seed, attempts, effort);
+const elapsed = Date.now() - started;
 mkdirSync('out', { recursive: true });
 writeFileSync('out/plan.svg', renderSVG(plan, brief));
 
@@ -27,3 +34,4 @@ console.log('walls   ', plan.walls.length, 'exterior', plan.walls.filter((w) => 
 console.log('windows ', plan.windows.map((w) => w.roomId).join(', ') || 'none');
 console.log('doors   ', plan.doors.map((d) => `${d.a}${d.b ? '↔' + d.b : '↔outside'}${d.entry ? '(entry)' : ''}`).join(', ') || 'none');
 console.log('problems', validate(plan.rooms, plan.walls, plan.windows, plan.footprint, brief, plan.doors));
+console.log('time    ', `${elapsed} ms — seed ${seed}, ${attempts} attempts, effort ${effort}`);
