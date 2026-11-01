@@ -7,7 +7,8 @@ programme; it produces a layout, walls, windows, doors and an SVG sheet.
 
 In: rectangular plots, setbacks, rooms with target areas and minimum dimensions,
 interior/exterior walls, windows on exterior walls, one straight circulation hall
-spanning the buildable width, interior doors and an entry door, SVG output.
+spanning the buildable width, interior doors and an entry door, SVG output, a
+browser UI with a live preview.
 
 Not in (for now): L-shaped or irregular plots, corridors that turn or branch,
 staircases, furniture, 3D, PDF/DXF export, any server-side component.
@@ -28,11 +29,15 @@ engine/src/windows.ts     window placement on exterior walls, clear of doors
 engine/src/doors.ts       bath roles, door pairs, openings, door reachability
 engine/src/validate.ts    rule checks, returns a list of violations
 engine/src/render-svg.ts  Plan -> SVG string
-engine/src/index.ts       generate(brief, seed, attempts)
+engine/src/index.ts       generate(brief, seed, attempts, effort)
 demo.ts                   CLI: writes out/plan.svg
+ui/                       Vite + React + TypeScript, imports the engine directly
 ```
 
-The React UI (not built yet) will live in `ui/` and import the engine directly.
+The UI imports `engine/src` with no copy and no build step between them. The
+engine's imports carry `.js` extensions for `module: NodeNext`, which Node
+resolves and Vite does not, so `ui/vite.config.ts` maps `./foo.js` onto
+`./foo.ts` when the latter exists. Keep that plugin if you touch the config.
 
 ## Brief schema
 
@@ -70,6 +75,11 @@ footprint. The form therefore never has to be arithmetically perfect.
 
 Same seed + same brief = same plan. Never break that; it is what makes the
 engine tunable.
+
+`generate` takes a fourth argument, `effort` (default 1), which scales the spine
+and split searches together. The CLI runs 0.5, the UI preview 0.35. Lower effort
+is faster and may return a plan with a reported violation rather than a better
+one.
 
 ## Doors and circulation
 
@@ -111,15 +121,16 @@ turn or branch, that is a partitioner change, not a door change.
 | 7 | React UI | Form + live preview, engine imported directly |
 | 8 | Export + presets | SVG/JSON download, 1BHK/2BHK/3BHK presets, seed control |
 
-Stages 0–6 are done. 7 onwards is the remaining work.
+Stages 0–7 are done. Stage 8 is the remaining work.
 
 ## Open decisions
 
-- **Performance before the UI.** 150 attempts takes about 32 s, because the spine
-  search partitions two blocks per candidate and every candidate builds walls and
-  doors so the ranking can score real door feasibility. Rank on shape first and
-  derive walls and doors only for the top few candidates. Worth doing before
-  stage 7, since 32 s per plan will not feel good in a browser.
+- **Performance.** 120 attempts at effort 0.5 takes about 15 s; full effort at
+  150 attempts takes about 29 s. The effort knob trades quality for latency but
+  does not remove the cost. The real fix is to rank candidates on shape first and
+  derive walls and doors only for the top few.
+- **Licence.** The repository is public and has no `LICENSE` file, which leaves
+  it all-rights-reserved by default. Pick one before inviting use.
 - **Zone-first split.** Marson & Musse squarify *zones* (social / service /
   private) first, then squarify rooms inside each zone. It is implemented in
   `subdivide.ts` behind `SplitMode = 'zoned'` and defaulted off: constraining the
