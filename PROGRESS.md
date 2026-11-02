@@ -8,6 +8,12 @@ Stages 0–7 of PLAN.md are done. The engine generates a plan end to end — roo
 walls, windows, doors — renders an SVG, and the React UI in `ui/` imports the
 engine directly with a live preview.
 
+**It works reliably on one brief.** An external audit on 01/11/2026 ran six
+briefs and only the 2BHK demo validated on every seed; the rest failed badly.
+Treat everything below as true of the demo brief, and see the audit section for
+what actually holds across briefs. The audit plan in PLAN.md is what the work is
+following now.
+
 Sample run: 10×15 m plot, 1.5 m setbacks all round → 7×12 m buildable
 footprint, 9 rooms (8 plus the hall), 28 wall segments (14 exterior), 7 windows,
 9 doors, validation clean, score −24.11 at seed 7 with 120 attempts and effort
@@ -75,6 +81,10 @@ rather than today's output.
 
 ## Known problems
 
+- **Most briefs fail.** Only the 2BHK demo validates on every seed. 1BHK, 3BHK,
+  narrow, tiny and overstuffed all fail; the audit section has the numbers and
+  the causes.
+
 - Full-effort generation is still slow: ~15 s at 120 attempts, ~29 s at 150.
   Ranking on shape first and deriving walls and doors only for the top few
   candidates is the real fix; the effort knob only masks it.
@@ -109,10 +119,83 @@ violation. The paper itself notes that the initial zone split can leave rooms
 far from square. Keep it available; do not make it the default without a better
 zone-level cut.
 
+## Audit (external review, 01/11/2026)
+
+Six briefs x seeds 1-8 at the preview settings (60 attempts, effort 0.6) unless
+noted. `valid` means the plan validated with no problems at all.
+
+**Baseline, before any fix:**
+
+```
+1BHK          0/8      676 ms   8x bedroom min-width; 6x bath unreachable; 1x kitchen unreachable
+2BHK          8/8    10295 ms   —
+3BHK          1/8    32995 ms   6x daylight room with no window; 1x bath min-width; 1x store unreachable
+narrow        0/8     3390 ms   8x bath min-width; 3x bedroom unreachable
+tiny          0/8      385 ms   every room below min width; kitchen and bath unreachable
+overstuffed   0/8     2258 ms   32x bedroom min-width; and the rest
+```
+
+**Phase 0 — done.** `tools/stress.ts` (resumable per seed, `--briefs`, `--seeds`,
+`--mode`, `--report`) and `tests/engine.test.ts` (13 tests on `node:test`, no new
+dependencies). `npm test` and `npm run stress`.
+
+The tests found a real bug on their first run: `complement()` in `windows.ts`
+did not clamp blocked intervals to the wall run, so a door on the same wall line
+but outside the room widened the free span and the window was centred on it.
+Windows were landing up to 0.8 m outside their own room — dining's window sat in
+the living room. Fixed, with a regression test that a window must lie on its own
+room's wall and within that room's span. `walls.ts` had the same missing clamp
+and got the same treatment.
+
+**2.1 and 2.4 — done.** `infeasibleReason()` rejects a brief before searching
+when the rooms need more floor area than the setbacks leave, or a room's minimum
+width cannot fit the footprint; the reason lands on `plan.infeasible`. The hall
+is no longer assumed — `generate()` tries the plain programme first and falls
+back to the spine only when the door rules need it, and the fallback re-checks
+feasibility with the hall's area added (5% tolerance, since normalisation
+absorbs a small overshoot). 2.2 came with it: `effort` now reaches the recursive
+splits.
+
+```
+tiny          0/0 (8 infeasible)     0 ms   programme needs 40.0 m² but only 20.0 m² is buildable
+overstuffed   0/0 (8 infeasible)     0 ms   programme needs 96.0 m² but only 48.0 m² is buildable
+1BHK          0/8                  790 ms   8x no door path from living: bath, kitchen
+```
+
+**Phase 1 — written, not merged.** living<->kitchen added to the pair table;
+baths go all en suite when there is no hall, so a 1BHK's single bath can serve
+its bedroom instead of demanding circulation; door placement grows outward from
+the living room under `doorCapacity` instead of taking every allowed pair, and
+`validate()` enforces capacity, requires an entry door, and checks window counts
+against the spec; entry falls back living -> hall -> dining; the ranking
+penalises a daylight room that touches no exterior wall.
+
+It is not green, so it is not on main:
+
+```
+1BHK          0/8       599 ms   plain: kitchen and bath min-width, kitchen unreachable
+                                  hall:  bedroom min-width, bath unreachable
+2BHK          6/8      7171 ms   no door path: bedroom / bath+utility+bedroom
+2BHK (150)    8/8     17836 ms   same code, more attempts
+```
+
+2BHK regressed from 8/8 to 6/8 at the preview setting and recovers to 8/8 at 150
+attempts with identical code. That is search depth, not a structural conflict:
+enforcing door capacity shrinks the fraction of legal layouts. The reason more
+attempts is the only lever today is that `spine()` picks its winning layout with
+`layoutScore` alone — door feasibility never influences which layout is built, it
+only filters afterwards. Fixing that is the "rank cheap first, build walls and
+doors for the top K" work in Phase 4.
+
 ## Next task
 
-Stage 8 — export and presets: SVG/JSON download, 1BHK/2BHK/3BHK presets, seed
-control in the UI. The performance fix above should come before or with it.
+Phase 4, performance: rank candidates cheaply first and build walls and doors
+only for the top K, then move `generate()` into a Web Worker in the UI. That
+unblocks Phase 1, whose rules are written but cannot be gated while 60 attempts
+samples the legal layouts so thinly.
+
+Stage 8 — export and presets — waits until the audit phases are green, so the
+presets can ship as regression cases rather than as more briefs that fail.
 
 ## How to run
 
