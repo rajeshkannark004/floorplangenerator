@@ -1,7 +1,21 @@
-import { type Rect, sharedEdge, EPS } from './geometry.js';
+import { type SharedEdge, sharedEdge, EPS } from './geometry.js';
 import type { Room } from './brief.js';
+import { partsOf, roomSharedEdges, mergeEdges } from './shape.js';
 
-export interface WallSeg { x1: number; y1: number; x2: number; y2: number; exterior: boolean }
+export interface WallSeg {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  exterior: boolean;
+  /** For an exterior run, the room it bounds. */
+  roomId?: string;
+}
+
+const segOf = (e: SharedEdge, exterior: boolean): WallSeg =>
+  e.axis === 'v'
+    ? { x1: e.at, y1: e.lo, x2: e.at, y2: e.hi, exterior }
+    : { x1: e.lo, y1: e.at, x2: e.hi, y2: e.at, exterior };
 
 export const segLen = (w: { x1: number; y1: number; x2: number; y2: number }) =>
   Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
@@ -27,47 +41,47 @@ function complement(covered: [number, number][], lo: number, hi: number): [numbe
   return out;
 }
 
-/** Interior walls come from shared room edges; exterior walls are the uncovered leftovers. */
+/**
+ * Interior walls come from shared room edges; exterior walls are the uncovered
+ * leftovers. A room made of several parts has seams between them; a seam is
+ * covered by the sibling part, so it is not a wall. Each room's exterior
+ * pieces are merged, so a straight run reads as one segment across its seams.
+ */
 export function buildWalls(rooms: Room[]): WallSeg[] {
   const segs: WallSeg[] = [];
 
   for (let i = 0; i < rooms.length; i++) {
     for (let j = i + 1; j < rooms.length; j++) {
-      const e = sharedEdge(rooms[i].rect, rooms[j].rect);
-      if (!e) continue;
-      segs.push(
-        e.axis === 'v'
-          ? { x1: e.at, y1: e.lo, x2: e.at, y2: e.hi, exterior: false }
-          : { x1: e.lo, y1: e.at, x2: e.hi, y2: e.at, exterior: false },
-      );
+      for (const e of roomSharedEdges(rooms[i], rooms[j])) segs.push(segOf(e, false));
     }
   }
 
   for (const r of rooms) {
-    const rect: Rect = r.rect;
-    const edges = [
-      { axis: 'v' as const, at: rect.x, lo: rect.y, hi: rect.y + rect.h },
-      { axis: 'v' as const, at: rect.x + rect.w, lo: rect.y, hi: rect.y + rect.h },
-      { axis: 'h' as const, at: rect.y, lo: rect.x, hi: rect.x + rect.w },
-      { axis: 'h' as const, at: rect.y + rect.h, lo: rect.x, hi: rect.x + rect.w },
-    ];
+    const runs: SharedEdge[] = [];
+    for (const rect of partsOf(r)) {
+      const edges = [
+        { axis: 'v' as const, at: rect.x, lo: rect.y, hi: rect.y + rect.h },
+        { axis: 'v' as const, at: rect.x + rect.w, lo: rect.y, hi: rect.y + rect.h },
+        { axis: 'h' as const, at: rect.y, lo: rect.x, hi: rect.x + rect.w },
+        { axis: 'h' as const, at: rect.y + rect.h, lo: rect.x, hi: rect.x + rect.w },
+      ];
 
-    for (const ed of edges) {
-      const covered: [number, number][] = [];
-      for (const o of rooms) {
-        if (o.id === r.id) continue;
-        const e = sharedEdge(rect, o.rect);
-        if (!e) continue;
-        if (e.axis === ed.axis && Math.abs(e.at - ed.at) < EPS) covered.push([e.lo, e.hi]);
-      }
-      for (const [lo, hi] of complement(covered, ed.lo, ed.hi)) {
-        segs.push(
-          ed.axis === 'v'
-            ? { x1: ed.at, y1: lo, x2: ed.at, y2: hi, exterior: true }
-            : { x1: lo, y1: ed.at, x2: hi, y2: ed.at, exterior: true },
-        );
+      for (const ed of edges) {
+        const covered: [number, number][] = [];
+        for (const o of rooms) {
+          for (const q of partsOf(o)) {
+            if (q === rect) continue;
+            const e = sharedEdge(rect, q);
+            if (!e) continue;
+            if (e.axis === ed.axis && Math.abs(e.at - ed.at) < EPS) covered.push([e.lo, e.hi]);
+          }
+        }
+        for (const [lo, hi] of complement(covered, ed.lo, ed.hi)) {
+          runs.push({ axis: ed.axis, at: ed.at, lo, hi, len: hi - lo });
+        }
       }
     }
+    for (const e of mergeEdges(runs)) segs.push({ ...segOf(e, true), roomId: r.id });
   }
 
   return segs;
@@ -77,6 +91,7 @@ export function exteriorSegmentsOf(room: Room, walls: WallSeg[]): WallSeg[] {
   const r = room.rect;
   return walls.filter((w) => {
     if (!w.exterior) return false;
+    if (w.roomId !== undefined) return w.roomId === room.id;
     const vertical = Math.abs(w.x1 - w.x2) < EPS;
     if (vertical) {
       const onX = Math.abs(w.x1 - r.x) < EPS || Math.abs(w.x1 - (r.x + r.w)) < EPS;

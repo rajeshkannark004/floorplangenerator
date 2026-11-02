@@ -1,4 +1,5 @@
-import { type Rect, sharedEdge, EPS } from './geometry.js';
+import { type Rect, EPS } from './geometry.js';
+import { longestSharedEdge } from './shape.js';
 import { type Room, type RoomType, ADJACENCY } from './brief.js';
 import { type WallSeg, segLen, exteriorSegmentsOf } from './walls.js';
 
@@ -137,7 +138,7 @@ export function placeDoors(rooms: Room[], walls: WallSeg[], fp: Rect, rng: Rng =
   const addDoor = (a: Room, b: Room): boolean => {
     const k = pairKey(a.id, b.id);
     if (seen.has(k)) return false;
-    const e = sharedEdge(a.rect, b.rect);
+    const e = longestSharedEdge(a, b);
     if (!e) return false;
     const span = opening(e.lo, e.hi, DOOR_WIDTH, rng);
     if (!span) return false;
@@ -205,9 +206,13 @@ export function placeDoors(rooms: Room[], walls: WallSeg[], fp: Rect, rng: Rng =
     ...rooms.filter((r) => r.type === 'dining'),
     ...rooms.filter((r) => r.type === 'living'),
   ];
+  // A partner has to share enough wall to hold a door. Taking the first room
+  // that merely touched left a bath with no door at all when that touch was a
+  // sliver, even though the next room in line had a full wall to offer.
+  const fits = (a: Room, b: Room) => (longestSharedEdge(a, b)?.len ?? 0) >= DOOR_WIDTH + 2 * DOOR_CLEARANCE;
   const pickPartner = (room: Room, order: (Room | undefined)[]): Room | null => {
     for (const c of order) {
-      if (c && c.id !== room.id && sharedEdge(room.rect, c.rect)) return c;
+      if (c && c.id !== room.id && fits(room, c)) return c;
     }
     return null;
   };
@@ -215,7 +220,14 @@ export function placeDoors(rooms: Room[], walls: WallSeg[], fp: Rect, rng: Rng =
     const bath = byId.get(asg.bathId);
     if (!bath) continue;
     const preferred = asg.role === 'ensuite' && asg.partnerId ? byId.get(asg.partnerId) : undefined;
-    const partner = pickPartner(bath, [preferred, ...bathFallback]);
+    // An en suite opens onto its own bedroom if it can, else onto whichever
+    // bedroom it does share a wall with. The partner is drawn before the
+    // layout is known, so insisting on it alone left baths with no door.
+    // A common bath that touches no circulation opens into a bedroom rather
+    // than having no door at all — it becomes en suite in all but name.
+    const bedrooms = rooms.filter((r) => r.type === 'bedroom' && r !== preferred);
+    const order = asg.role === 'ensuite' ? [preferred, ...bedrooms, ...bathFallback] : [...bathFallback, ...bedrooms];
+    const partner = pickPartner(bath, order);
     if (partner) addDoor(bath, partner);
   }
 

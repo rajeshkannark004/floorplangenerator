@@ -26,7 +26,10 @@ export interface Room {
   minW: number;
   daylight: boolean;
   windows: number;
+  /** The room's bounding box; the room itself when `parts` is absent. */
   rect: Rect;
+  /** Disjoint rectangles whose union is the room, set when it is not a plain rectangle. */
+  parts?: Rect[];
 }
 
 /** Starting values only — verify against local building norms before trusting them. */
@@ -68,9 +71,15 @@ export const ZONE_OF: Record<RoomType, Zone> = {
 export const ADJACENCY: [RoomType, RoomType][] = [
   ['living', 'dining'],
   ['dining', 'kitchen'],
+  // An open or semi-open kitchen off the living room. Without it a plan with
+  // no dining room can only reach the kitchen through a hall.
+  ['living', 'kitchen'],
   ['living', 'bedroom'],
   ['bedroom', 'bath'],
   ['kitchen', 'utility'],
+  // A store off the kitchen is a pantry. Without it a store with no hall to
+  // open onto can never be reached.
+  ['kitchen', 'store'],
   ['hall', 'living'],
   ['hall', 'dining'],
   ['hall', 'kitchen'],

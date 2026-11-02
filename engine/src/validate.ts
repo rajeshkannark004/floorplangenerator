@@ -1,4 +1,5 @@
-import { rectArea, EPS } from './geometry.js';
+import { EPS } from './geometry.js';
+import { roomArea, minWidth } from './shape.js';
 import type { Brief, Room } from './brief.js';
 import type { WallSeg } from './walls.js';
 import type { WindowSeg } from './windows.js';
@@ -20,13 +21,13 @@ export function validate(
   // check, and generate() already carries the reason.
   if (!rooms.length) return problems;
 
-  const covered = rooms.reduce((s, r) => s + rectArea(r.rect), 0);
+  const covered = rooms.reduce((s, r) => s + roomArea(r), 0);
   if (Math.abs(covered - fp.w * fp.h) > 0.01) {
     problems.push(`coverage ${covered.toFixed(2)} m² vs footprint ${(fp.w * fp.h).toFixed(2)} m²`);
   }
 
   for (const r of rooms) {
-    const m = Math.min(r.rect.w, r.rect.h);
+    const m = minWidth(r);
     if (m < r.minW - 0.01) {
       problems.push(`${r.id}: min dimension ${m.toFixed(2)} m < ${r.minW} m`);
     }

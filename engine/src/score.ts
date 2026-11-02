@@ -1,13 +1,14 @@
-import { type Rect, sharedEdge, touchesBoundary } from './geometry.js';
+import type { Rect } from './geometry.js';
 import type { Room } from './brief.js';
 import { ADJACENCY } from './brief.js';
+import { roomAspect, roomFill, roomArea, minWidth, roomTouchesBoundary, longestSharedEdge, shares } from './shape.js';
 
 export function adjacencyGraph(rooms: Room[]): Map<string, string[]> {
   const adj = new Map<string, string[]>();
   for (const r of rooms) adj.set(r.id, []);
   for (let i = 0; i < rooms.length; i++) {
     for (let j = i + 1; j < rooms.length; j++) {
-      if (sharedEdge(rooms[i].rect, rooms[j].rect)) {
+      if (shares(rooms[i], rooms[j])) {
         adj.get(rooms[i].id)!.push(rooms[j].id);
         adj.get(rooms[j].id)!.push(rooms[i].id);
       }
@@ -37,20 +38,28 @@ export function unreachableCount(rooms: Room[], entryType = 'living'): number {
 /** Aspect ratio penalty: quadratic in the excess past 1.5, so slivers cost real score. */
 export const ASPECT_SOFT = 1.5;
 export const ASPECT_WEIGHT = 8;
+/** Cost of an L, per unit of bounding box it leaves empty. A rectangle pays nothing. */
+export const NOTCH_WEIGHT = 6;
+/** Cost per unit of relative area error. The splitter is area-exact; grid growth is not. */
+export const AREA_WEIGHT = 10;
 
 export function layoutScore(rooms: Room[], fp: Rect, entryType = 'living'): number {
   let s = 0;
   for (const r of rooms) {
-    const a = Math.max(r.rect.w, r.rect.h) / Math.min(r.rect.w, r.rect.h);
+    const a = roomAspect(r);
     // A hall is supposed to be long and thin; judging it like a room would
     // push the corridor into a stubby square that reaches nothing.
     s += r.type === 'hall'
       ? Math.max(0, a - 5) ** 2 * 2
       : Math.max(0, a - ASPECT_SOFT) ** 2 * ASPECT_WEIGHT;
 
-    const m = Math.min(r.rect.w, r.rect.h);
+    const m = minWidth(r);
     if (m < r.minW) s += (r.minW - m) * 150;
-    if (r.daylight && !touchesBoundary(r.rect, fp)) s += 6;
+    if (r.daylight && !roomTouchesBoundary(r, fp)) s += 6;
+    if (r.parts && r.type !== 'hall') {
+      s += (1 - roomFill(r)) * NOTCH_WEIGHT;
+      s += (Math.abs(roomArea(r) - r.area) / r.area) * AREA_WEIGHT;
+    }
   }
 
   for (const [p, q] of ADJACENCY) {
@@ -60,7 +69,7 @@ export function layoutScore(rooms: Room[], fp: Rect, entryType = 'living'): numb
     let best = 0;
     for (const x of ps) {
       for (const y of qs) {
-        const e = sharedEdge(x.rect, y.rect);
+        const e = longestSharedEdge(x, y);
         if (e) best = Math.max(best, e.len);
       }
     }
@@ -78,18 +87,18 @@ export function layoutScore(rooms: Room[], fp: Rect, entryType = 'living'): numb
   if (hall) {
     for (const r of rooms) {
       if (r.id === hall.id) continue;
-      s += sharedEdge(r.rect, hall.rect) ? -4 : 3;
+      s += shares(r, hall) ? -4 : 3;
     }
   }
 
   const circulation = rooms.filter((r) => r.type === 'living' || r.type === 'dining' || r.type === 'hall');
-  const touchesCirc = (r: Room) => circulation.some((c) => c.id !== r.id && sharedEdge(r.rect, c.rect));
+  const touchesCirc = (r: Room) => circulation.some((c) => c.id !== r.id && shares(r, c));
   for (const r of rooms) {
     if (r.type === 'bedroom' && !touchesCirc(r)) s += 8;
     if (r.type === 'bath') {
       const ok =
-        rooms.some((o) => o.type === 'hall' && sharedEdge(r.rect, o.rect)) ||
-        rooms.some((o) => o.type === 'bedroom' && sharedEdge(r.rect, o.rect));
+        rooms.some((o) => o.type === 'hall' && shares(r, o)) ||
+        rooms.some((o) => o.type === 'bedroom' && shares(r, o));
       if (!ok) s += 10;
     }
   }

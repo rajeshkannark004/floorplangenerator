@@ -1,6 +1,8 @@
 import { type Brief, footprint, program, normaliseAreas, withHall, type Room } from './brief.js';
 import type { Rect } from './geometry.js';
 import { subdivide, mulberry32 } from './subdivide.js';
+import { growGrid, refineGrid, gridRooms, type GridPlan } from './grid.js';
+import { roomArea } from './shape.js';
 import { layoutScore } from './score.js';
 import { buildWalls } from './walls.js';
 import { placeWindows } from './windows.js';
@@ -14,6 +16,14 @@ export * from './walls.js';
 export * from './windows.js';
 export * from './doors.js';
 export * from './score.js';
+export * from './shape.js';
+export { GRID_CELL } from './grid.js';
+
+/**
+ * How rooms are laid out. 'split' is the original area-exact recursive
+ * splitter; 'grid' grows rooms from seeds on a grid and can make L-shapes.
+ */
+export type Layout = 'split' | 'grid';
 
 /**
  * A brief can be impossible before any search runs: the rooms need more floor
@@ -44,14 +54,22 @@ function problemsOf(plan: Plan, brief: Brief): string[] {
   return validate(plan.rooms, plan.walls, plan.windows, plan.footprint, brief, plan.doors);
 }
 
+/** Ranking cost of each validation problem a candidate has. */
+const PROBLEM_WEIGHT = 100;
+/** Grid candidates that get the expensive local search; the rest are ranked and dropped. */
+const GRID_FINALISTS = 24;
+/** Local-search moves per finalist at full effort. */
+const GRID_REFINE_MOVES = 4200;
+
 /** The best of `attempts` seeded candidates, optionally with a circulation spine. */
-function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: number, useHall: boolean): Plan {
+function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: number, useHall: boolean, layout: Layout): Plan | null {
   const rooms0: Room[] = useHall ? withHall(program(brief), fp) : program(brief);
+  const targets = normaliseAreas(rooms0, fp);
   let best: Plan | null = null;
 
-  for (let i = 0; i < attempts; i++) {
-    const rng = mulberry32(seed * 100003 + i);
-    const rooms = subdivide(fp, normaliseAreas(rooms0, fp), rng, 0, 'flat', effort);
+  const consider = (rooms: Room[], i: number) => {
+    // Grid growth can starve a room of cells on a crowded plan; that is not a candidate.
+    if (rooms.some((r) => roomArea(r) <= 0)) return;
     const walls = buildWalls(rooms);
     const doors = placeDoors(rooms, walls, fp, mulberry32(seed * 7919 + i));
 
@@ -67,16 +85,38 @@ function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: 
       if (r.type === 'hall') continue;
       overload += Math.max(0, (degrees.get(r.id) ?? 0) - doorCapacity(r.type));
     }
-    const score = layoutScore(rooms, fp) + stuck * 60 + overload * 15;
+    // Rank on the real checks too. Windows are cheap to place, and a plan the
+    // validator rejects should never beat one it accepts on shape alone.
+    const windows = placeWindows(rooms, walls, brief.windowWidth, doors);
+    const problems = validate(rooms, walls, windows, fp, brief, doors).length;
+    const score = layoutScore(rooms, fp) + stuck * 60 + overload * 15 + problems * PROBLEM_WEIGHT;
 
     if (!best || score < best.score) {
-      best = { rooms, walls, windows: [], doors, footprint: fp, score, seed };
+      best = { rooms, walls, windows, doors, footprint: fp, score, seed };
+    }
+  };
+
+  if (layout === 'grid') {
+    // Rank cheap first: grow every attempt, score it on the grid, and spend
+    // the local search and the walls-and-doors build only on the finalists.
+    // Each finalist keeps its own rng, so a seed still reproduces its plan.
+    const pool: { g: GridPlan; rng: () => number; i: number }[] = [];
+    for (let i = 0; i < attempts; i++) {
+      const rng = mulberry32(seed * 100003 + i);
+      pool.push({ g: growGrid(fp, targets, rng, effort), rng, i });
+    }
+    pool.sort((a, b) => a.g.score - b.g.score || a.i - b.i);
+    for (const { g, rng, i } of pool.slice(0, GRID_FINALISTS)) {
+      refineGrid(g, rng, Math.round(GRID_REFINE_MOVES * effort));
+      consider(gridRooms(g), i);
+    }
+  } else {
+    for (let i = 0; i < attempts; i++) {
+      consider(subdivide(fp, targets, mulberry32(seed * 100003 + i), 0, 'flat', effort), i);
     }
   }
 
-  const plan = best!;
-  plan.windows = placeWindows(plan.rooms, plan.walls, brief.windowWidth, plan.doors);
-  return plan;
+  return best;
 }
 
 /**
@@ -87,7 +127,7 @@ function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: 
  * width. Try the plain programme first; fall back to the spine only when the
  * door rules cannot be satisfied without it.
  */
-export function generate(brief: Brief, seed = 1, attempts = 400, effort = 1): Plan {
+export function generate(brief: Brief, seed = 1, attempts = 400, effort = 1, layout: Layout = 'split'): Plan {
   const fp = footprint(brief);
 
   const reason = infeasibleReason(brief, fp);
@@ -95,15 +135,18 @@ export function generate(brief: Brief, seed = 1, attempts = 400, effort = 1): Pl
     return { rooms: [], walls: [], windows: [], doors: [], footprint: fp, score: 0, seed, infeasible: reason };
   }
 
-  const plain = search(brief, fp, seed, attempts, effort, false);
-  const plainProblems = problemsOf(plain, brief);
-  if (!plainProblems.length) return plain;
+  const plain = search(brief, fp, seed, attempts, effort, false, layout);
+  const plainProblems = plain ? problemsOf(plain, brief) : [];
+  if (plain && !plainProblems.length) return plain;
 
-  const spined = search(brief, fp, seed, attempts, effort, true);
-  const spinedProblems = problemsOf(spined, brief);
-  if (!spinedProblems.length) return spined;
+  const spined = search(brief, fp, seed, attempts, effort, true, layout);
+  const spinedProblems = spined ? problemsOf(spined, brief) : [];
+  if (spined && !spinedProblems.length) return spined;
 
-  return plainProblems.length <= spinedProblems.length ? plain : spined;
+  if (plain && spined) return plainProblems.length <= spinedProblems.length ? plain : spined;
+  const any = plain ?? spined;
+  if (any) return any;
+  return { rooms: [], walls: [], windows: [], doors: [], footprint: fp, score: 0, seed, infeasible: 'no candidate layout gave every room space' };
 }
 
 export { validate };

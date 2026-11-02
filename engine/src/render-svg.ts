@@ -2,6 +2,8 @@ import type { Brief, Room } from './brief.js';
 import type { WallSeg } from './walls.js';
 import type { WindowSeg } from './windows.js';
 import type { DoorSeg } from './doors.js';
+import type { Rect } from './geometry.js';
+import { partsOf, labelPoint, roomArea } from './shape.js';
 
 export interface Plan {
   rooms: Room[];
@@ -58,9 +60,11 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): st
   // plot boundary
   parts.push(`<rect x="${px(-brief.setbacks.left).toFixed(1)}" y="${py(-brief.setbacks.back).toFixed(1)}" width="${(plotW * scale).toFixed(1)}" height="${(plotD * scale).toFixed(1)}" fill="none" stroke="#c9c9c9" stroke-width="1" stroke-dasharray="6 5"/>`);
 
-  // rooms
+  // rooms, part by part — an L is two or more rectangles
   for (const r of plan.rooms) {
-    parts.push(`<rect x="${px(r.rect.x).toFixed(1)}" y="${py(r.rect.y).toFixed(1)}" width="${(r.rect.w * scale).toFixed(1)}" height="${(r.rect.h * scale).toFixed(1)}" fill="${COLORS[r.type] ?? '#f4f4f4'}" stroke="none"/>`);
+    for (const p of partsOf(r)) {
+      parts.push(`<rect x="${px(p.x).toFixed(1)}" y="${py(p.y).toFixed(1)}" width="${(p.w * scale).toFixed(1)}" height="${(p.h * scale).toFixed(1)}" fill="${COLORS[r.type] ?? '#f4f4f4'}" stroke="${COLORS[r.type] ?? '#f4f4f4'}" stroke-width="0.6"/>`);
+    }
   }
 
   // walls
@@ -74,6 +78,16 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): st
   // the opening — swinging every leaf to +x/+y swept half of them through the
   // wall they sit in.
   const roomById = new Map(plan.rooms.map((r) => [r.id, r]));
+  // The part of a room the door opens into. For an L the bounding-box centre
+  // can sit on the wrong side of the door line; the part holding the door cannot.
+  const anchor = (room: Room, d: DoorSeg): Rect => {
+    const mx = (d.x1 + d.x2) / 2;
+    const my = (d.y1 + d.y2) / 2;
+    return (
+      partsOf(room).find((p) => mx >= p.x - 1e-6 && mx <= p.x + p.w + 1e-6 && my >= p.y - 1e-6 && my <= p.y + p.h + 1e-6) ??
+      room.rect
+    );
+  };
   for (const d of plan.doors ?? []) {
     const rad = d.width * scale;
     const ink = d.entry ? '#7a4a1f' : '#23272b';
@@ -93,7 +107,8 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): st
       const x = px(d.x1);
       const yTop = py(Math.min(d.y1, d.y2));
       const yBot = py(Math.max(d.y1, d.y2));
-      const side = target.rect.x + target.rect.w / 2 > d.x1 ? 1 : -1;
+      const home = anchor(target, d);
+      const side = home.x + home.w / 2 > d.x1 ? 1 : -1;
       const a0 = side === 1 ? 0 : 180;
       parts.push(`<line x1="${x}" y1="${yTop}" x2="${x}" y2="${yBot}" stroke="#ffffff" stroke-width="${(t + 1).toFixed(2)}"/>`);
       parts.push(`<line x1="${x}" y1="${yTop}" x2="${(x + side * rad).toFixed(2)}" y2="${yTop}" stroke="${ink}" stroke-width="1.2"/>`);
@@ -102,7 +117,8 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): st
       const y = py(d.y1);
       const xL = px(Math.min(d.x1, d.x2));
       const xR = px(Math.max(d.x1, d.x2));
-      const side = target.rect.y + target.rect.h / 2 > d.y1 ? 1 : -1;
+      const home = anchor(target, d);
+      const side = home.y + home.h / 2 > d.y1 ? 1 : -1;
       const a0 = side === 1 ? 90 : 270;
       const a1 = side === 1 ? 0 : 360;
       parts.push(`<line x1="${xL}" y1="${y}" x2="${xR}" y2="${y}" stroke="#ffffff" stroke-width="${(t + 1).toFixed(2)}"/>`);
@@ -135,11 +151,13 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): st
 
   // labels
   for (const r of plan.rooms) {
-    const cx = px(r.rect.x + r.rect.w / 2);
-    const cy = py(r.rect.y + r.rect.h / 2);
+    const at = labelPoint(r);
+    const cx = px(at.x);
+    const cy = py(at.y);
     const name = r.type.charAt(0).toUpperCase() + r.type.slice(1);
+    const size = partsOf(r).length > 1 ? `${roomArea(r).toFixed(1)} m²` : `${r.rect.w.toFixed(1)}×${r.rect.h.toFixed(1)} m`;
     parts.push(`<text x="${cx.toFixed(1)}" y="${(cy - 2).toFixed(1)}" text-anchor="middle" font-size="11" fill="#23272b">${esc(name)}</text>`);
-    parts.push(`<text x="${cx.toFixed(1)}" y="${(cy + 11).toFixed(1)}" text-anchor="middle" font-size="9" fill="#6b7280">${r.rect.w.toFixed(1)}×${r.rect.h.toFixed(1)} m</text>`);
+    parts.push(`<text x="${cx.toFixed(1)}" y="${(cy + 11).toFixed(1)}" text-anchor="middle" font-size="9" fill="#6b7280">${size}</text>`);
   }
 
   // title block
