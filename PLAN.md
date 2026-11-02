@@ -121,7 +121,40 @@ turn or branch, that is a partitioner change, not a door change.
 | 7 | React UI | Form + live preview, engine imported directly |
 | 8 | Export + presets | SVG/JSON download, 1BHK/2BHK/3BHK presets, seed control |
 
-Stages 0–7 are done. Stage 8 is the remaining work.
+Stages 0–7 are done. Stage 8 is the remaining feature work, but it is blocked
+behind the audit plan below — the engine only works reliably on the demo brief.
+
+## Audit plan (external review, 01/11/2026)
+
+An external review stress-tested the engine on six briefs. Only the 2BHK demo
+passed; almost every other brief failed. The phases below are the agreed way to
+fix that, in order, with a checkpoint review after each group. Ground rules:
+no claim without a harness number, never break determinism, the engine stays
+pure, fix root causes rather than loosening the validator, one phase per commit
+series with before/after numbers recorded in [PROGRESS.md](PROGRESS.md).
+
+| Phase | Work | Status |
+|---|---|---|
+| 0 | Stress harness, real tests, `npm test` | **Done** |
+| 1 | Door rules: allowed pairs, capacity enforced in placement, entry fallback, window feasibility in ranking | **Written, not merged** — the rules are right but the gate is not green |
+| 2.1 | Hall spine too rigid: pick the spine direction, make the hall optional | **Done** — hall is now tried only when the door rules need it |
+| 2.2 | `effort` not propagated into the recursive splits | **Done** (fixed as part of 2.1 work) |
+| 2.3 | Repair pass for min-width violations | Pending |
+| 2.4 | Infeasible briefs must say so | **Done** — `plan.infeasible` with a plain reason |
+| 3 | Geometry honesty: clear vs centreline sizes, front/back convention, stronger `validate()`, merge collinear walls | Pending |
+| 4 | Performance: rank cheap first, build walls/doors for the top K only, Web Worker in the UI | Pending — **next**, it gates Phase 1 |
+| 5 | Hygiene: README/PLAN/PROGRESS honesty, LICENSE, dead code, `noUnusedLocals`, CI | Partly done (README, dead code below) |
+| 6 | Real-world norms — needs the owner, not guesswork | Blocked on owner input |
+| 7 | Stage 8 features, with the audit briefs as regression cases | Pending |
+
+Checkpoints: **1** = Phase 0, then 2.1 and 2.4, then Phase 1. **2** = the rest of
+Phase 2, then Phase 3. **3** = Phases 4 and 5. Harness output is reviewed at each.
+
+The gate for Phase 1 is 1BHK and 3BHK at 7/8 seeds or better at the preview
+settings (60 attempts, effort 0.6). It is not met. Enforcing door capacity shrank
+the share of legal layouts enough that 60 attempts no longer samples it: 2BHK
+scores 6/8 at 60 attempts and 8/8 at 150 with identical code. That points at
+Phase 4 rather than at the door rules.
 
 ## Open decisions
 
