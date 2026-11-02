@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 01/11/2026
+Last updated: 02/11/2026
 
 ## Where things stand
 
@@ -187,9 +187,85 @@ attempts is the only lever today is that `spine()` picks its winning layout with
 only filters afterwards. Fixing that is the "rank cheap first, build walls and
 doors for the top K" work in Phase 4.
 
+## 02/11/2026
+
+- **Direction change.** The owner finds the plans too template-like and wants
+  the algorithm itself — no AI — to design like an architect and repair its
+  own problems. Agreed plan in PLAN.md, *Next direction*: grid growth (A),
+  zones first (B), simulated annealing (C), self-repair (D). Step A is next.
+- **UI.** A Generate button replaces the debounced live preview; nothing runs
+  until it is pressed, and the panel says when inputs have changed since the
+  last run.
+- **Measured locally** (Windows, Node 22.18): demo at seed 7, 120 attempts,
+  effort 0.5 validates clean in 5.1 s (PROGRESS above says ~15 s; that was the
+  build sandbox). All 13 tests pass.
+- **`npm test` fails on Windows**: `node --test dist/tests/` is handed a
+  directory and exits with `MODULE_NOT_FOUND`. `node --test
+  dist/tests/engine.test.js` works. Not yet fixed.
+- **Phase 2.2 is not actually on main.** The recursive `partition` calls in
+  `subdivide.ts` drop `effort`, so it falls back to 1 below the first cut. The
+  fix is probably with the unmerged Phase 1 work.
+
+### Step A — grid growth (02/11/2026)
+
+`engine/src/grid.ts`, selected with `generate(..., layout = 'grid')`; the
+splitter stays the default. Rooms grow from seeds on a 0.3 m grid (rectangles,
+then L-growth, then leftover fill), then a tidy-up pass, then simulated
+annealing over single-cell and whole-wall moves. Rooms can now be L-shaped:
+`Room.parts` holds the rectangles, `rect` the bounding box, and `shape.ts`
+gives walls, doors, windows, scoring, validation and the renderer what they
+need for that.
+
+What made it work, in the order it was found:
+
+- Peeling "thin" cells ate rooms that were narrow all over. It now only peels
+  bumps narrower than the rest of their room.
+- Seeds spaced by both rooms' sizes, and placed one room-width from a room they
+  may open onto, so door neighbours end up sharing a wall.
+- Single-cell moves cannot widen a room; whole-wall shifts can.
+- On a 0.3 m grid most width misses are one cell (2.94 m vs 3.0 m) and cost
+  less than an odd shape. A miss now costs a fixed 40 on top.
+- The grid score's door check let paths run through baths; one-door rooms are
+  now dead ends. A daylight room needs 1.2 m of straight outside wall, not a
+  corner touch.
+- Rank cheap, refine the best 24 of 60 (4200 moves at full effort). Refining 4
+  scored 1/6 on 2BHK; breadth matters more than depth.
+
+Changes that affect both layouts:
+
+- Candidates are ranked on real validation (100 per problem), windows placed,
+  not on shape alone.
+- Door rules: living↔kitchen and kitchen↔store added to the pair table
+  (plausible, not verified norms); an en suite falls back to any bedroom it
+  shares a wall with; a common bath with no circulation opens into a bedroom;
+  a bath partner must share enough wall for a door.
+
+Harness, preview settings (60 attempts, effort 0.6), seeds 1–8:
+
+```
+              split           grid
+1BHK          0/8   0.6 s     6/8   4.1 s
+2BHK          8/8   3.8 s     8/8   5.0 s
+3BHK          7/8   8.5 s     1/8  12.7 s
+narrow        0/8   1.4 s     0/8   ~7–10 s
+```
+
+Split 3BHK was 1/8 at the audit baseline; the door-rule fixes and ranking on
+validation took it to 7/8. The narrow average in the raw report (82 s) is one
+568 s seed that reruns in 9.8 s: the machine stalled, not the code. 18 tests
+pass (5 new for grid).
+
+Still wrong with grid: 3BHK (missing windows, bedrooms off circulation) and
+narrow (bedrooms unreachable); about 2x slower than split; the hall is still a
+full-width strip.
+
 ## Next task
 
-Phase 4, performance: rank candidates cheaply first and build walls and doors
+Grid: 3BHK and narrow, then step B (zones first, hall only where it joins
+zones). The UI defaults to grid; the CLI and harness default to split.
+
+Earlier plan — Phase 4's "rank cheap first" is now done for grid; the rest
+waits on whether split stays: rank candidates cheaply first and build walls and doors
 only for the top K, then move `generate()` into a Web Worker in the UI. That
 unblocks Phase 1, whose rules are written but cannot be gated while 60 attempts
 samples the legal layouts so thinly.

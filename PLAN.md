@@ -23,6 +23,8 @@ and portable to the browser unchanged.
 engine/src/geometry.ts    rect maths, shared edges, boundary tests
 engine/src/brief.ts       Brief/Room types, room defaults, zones, adjacency rules
 engine/src/subdivide.ts   seeded partitioner, hall spine placement
+engine/src/grid.ts        grid growth + annealing; rooms can be L-shaped
+engine/src/shape.ts       rooms as unions of rectangles: shared edges, min width
 engine/src/score.ts       layout scoring + reachability
 engine/src/walls.ts       interior walls from shared edges, exterior from leftovers
 engine/src/windows.ts     window placement on exterior walls, clear of doors
@@ -123,6 +125,10 @@ turn or branch, that is a partitioner change, not a door change.
 
 Stages 0–7 are done. Stage 8 is the remaining feature work, but it is blocked
 behind the audit plan below — the engine only works reliably on the demo brief.
+The layout step itself is being replaced; see *Next direction* below.
+
+Since stage 7 the UI generates only when the Generate button is pressed, not on
+every field change.
 
 ## Audit plan (external review, 01/11/2026)
 
@@ -139,7 +145,7 @@ series with before/after numbers recorded in [PROGRESS.md](PROGRESS.md).
 | 1 | Door rules: allowed pairs, capacity enforced in placement, entry fallback, window feasibility in ranking | **Written, not merged** — the rules are right but the gate is not green |
 | 2.1 | Hall spine too rigid: pick the spine direction, make the hall optional | **Done** — hall is now tried only when the door rules need it |
 | 2.2 | `effort` not propagated into the recursive splits | **Done** (fixed as part of 2.1 work) |
-| 2.3 | Repair pass for min-width violations | Pending |
+| 2.3 | Repair pass for min-width violations | Folded into step D of the new direction below |
 | 2.4 | Infeasible briefs must say so | **Done** — `plan.infeasible` with a plain reason |
 | 3 | Geometry honesty: clear vs centreline sizes, front/back convention, stronger `validate()`, merge collinear walls | Pending |
 | 4 | Performance: rank cheap first, build walls/doors for the top K only, Web Worker in the UI | Pending — **next**, it gates Phase 1 |
@@ -156,6 +162,43 @@ the share of legal layouts enough that 60 attempts no longer samples it: 2BHK
 scores 6/8 at 60 attempts and 8/8 at 150 with identical code. That points at
 Phase 4 rather than at the door rules.
 
+## Next direction: an architect-style generator (agreed 02/11/2026)
+
+The plans read as templates. The cause is the splitter: it only ever slices a
+rectangle into smaller rectangles, so every plan is a treemap with a straight
+hall strip through it. The owner wants the algorithm itself to design like an
+architect — **no AI, no learned model, no dataset** — and to be as intelligent
+as possible when a plan has problems: it should find and fix them itself, not
+hand back a broken plan with a list of violations.
+
+The replacement keeps walls, doors, windows, validation and the seeded rng.
+Only the layout step changes.
+
+| Step | Work | Source |
+|---|---|---|
+| A | **Grid growth.** Rooms start from seed cells and grow cell by cell towards their target area, rectangular first and L-shaped when that fits better. Replaces `partition` and `spine`. | Lopes et al. (2010), *A Constrained Growth Method for Procedural Floor Plan Generation*, GAME-ON 2010 |
+| B | **Zones first.** Social at the front with the entry, service at the side or back, private in its own wing. Seed cells are placed inside their zone. The hall grows only where it has to join the zones. | Marson & Musse (2010); Mirahmadi & Shami (2012), arXiv:1211.5842, for corridors |
+| C | **Optimise.** Simulated annealing over seed positions, room swaps and wall shifts. A move is kept only if it improves a score covering shape, daylight, door flow, privacy, hall waste and target areas. | Merrell, Schkufza & Koltun (2010), *Computer-Generated Residential Building Layouts*, doi:10.1145/1866158.1866203 |
+| D | **Self-repair.** When validation fails, targeted moves on the offending rooms (widen a narrow room, regrow an unreachable one next to circulation, move a daylight room onto the boundary) before giving up. A plan is only returned with problems when repair cannot find a fix, and it says which. | Replaces audit item 2.3 |
+
+Status (02/11/2026): **A is in**, behind `layout = 'grid'`, with an early form
+of C (annealing on the grid) because growth alone validated 0/8 on every
+brief. Grid beats split on 1BHK, ties on 2BHK, trails on 3BHK; numbers in
+PROGRESS.md.
+
+Order: A first — it is what removes the boxy look — then B, C, D. Each step is
+measured on the stress harness against the current splitter before it replaces
+it. The old splitter stays selectable until the new one wins on every brief.
+
+What this changes downstream:
+
+- Rooms are no longer always rectangles. `Room.rect` becomes a list of cells or
+  a rectilinear polygon; `sharedEdge`, `buildWalls`, `exteriorSegmentsOf`,
+  door and window placement and the renderer must handle that.
+- Area becomes grid-quantised. Grid size is a trade between precision and
+  speed; start at 0.3 m and measure.
+- Determinism still holds: every random choice comes from the seeded rng.
+
 ## Open decisions
 
 - **Performance.** 120 attempts at effort 0.5 takes about 15 s; full effort at
@@ -167,8 +210,11 @@ Phase 4 rather than at the door rules.
 - **Zone-first split.** Marson & Musse squarify *zones* (social / service /
   private) first, then squarify rooms inside each zone. It is implemented in
   `subdivide.ts` behind `SplitMode = 'zoned'` and defaulted off: constraining the
-  layout into three blocks measured worse on shape. Revisit only with a better
-  zone-level cut.
+  layout into three blocks measured worse on shape. Zoning returns in step B of
+  the new direction, as seed placement for grid growth rather than as a cut.
+- **Phase 4 vs the new direction.** Phase 4 optimises the splitter that step A
+  replaces. Decide whether to finish it first or fold its "rank cheap first"
+  idea into step C.
 - **Hall depth.** `HALL_DEPTH` is 1.2 m and is a plausible value, not a verified
   norm. Rooms shrink about 10% to pay for the corridor, so this number is a real
   trade against target areas.
