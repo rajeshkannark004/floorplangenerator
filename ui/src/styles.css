@@ -83,7 +83,8 @@ body {
   opacity: 0.7;
 }
 
-.field input {
+.field input,
+.field select {
   width: 100%;
   padding: 7px 9px;
   border: 1px solid var(--line);
@@ -93,7 +94,8 @@ body {
   background: #fff;
 }
 
-.field input:focus {
+.field input:focus,
+.field select:focus {
   outline: 2px solid rgba(47, 111, 79, 0.25);
   border-color: var(--accent);
 }
@@ -200,4 +202,21 @@ body {
     border-right: none;
     border-bottom: 1px solid var(--line);
   }
+}
+
+.generate {
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.generate:disabled {
+  opacity: 0.6;
+  cursor: default;
 }

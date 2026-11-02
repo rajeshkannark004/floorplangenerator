@@ -5,6 +5,7 @@ import {
   renderSVG,
   validate,
   type Brief,
+  type Layout,
   type RoomSpec,
 } from '../../engine/src/index.js';
 
@@ -22,6 +23,7 @@ interface FormState {
   utility: boolean;
   seed: number;
   attempts: number;
+  layout: Layout;
 }
 
 const INITIAL: FormState = {
@@ -38,6 +40,7 @@ const INITIAL: FormState = {
   utility: true,
   seed: 7,
   attempts: 60,
+  layout: 'grid',
 };
 
 /** Preview runs at reduced search effort; the CLI keeps the thorough settings. */
@@ -113,13 +116,17 @@ export default function App() {
   const [svg, setSvg] = useState('');
   const [problems, setProblems] = useState<string[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [busy, setBusy] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The form a plan was last requested for. Nothing generates until the user
+  // presses Generate, so editing a field no longer kicks off a run.
+  const [submitted, setSubmitted] = useState<FormState | null>(null);
 
   const set = <K extends keyof FormState>(key: K) => (value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
   useEffect(() => {
+    if (!submitted) return;
     setBusy(true);
     let cancelled = false;
     let inner: ReturnType<typeof setTimeout> | undefined;
@@ -130,10 +137,10 @@ export default function App() {
     const outer = setTimeout(() => {
       inner = setTimeout(() => {
         if (cancelled) return;
-        const brief = toBrief(form);
+        const brief = toBrief(submitted);
         try {
           const t0 = performance.now();
-          const plan = generate(brief, form.seed, form.attempts, PREVIEW_EFFORT);
+          const plan = generate(brief, submitted.seed, submitted.attempts, PREVIEW_EFFORT, submitted.layout);
           const ms = performance.now() - t0;
           setSvg(renderSVG(plan, brief));
           setProblems(validate(plan.rooms, plan.walls, plan.windows, plan.footprint, brief, plan.doors));
@@ -152,14 +159,16 @@ export default function App() {
         }
         setBusy(false);
       }, 16);
-    }, 200);
+    }, 0);
 
     return () => {
       cancelled = true;
       clearTimeout(outer);
       if (inner) clearTimeout(inner);
     };
-  }, [form]);
+  }, [submitted]);
+
+  const stale = submitted !== null && submitted !== form;
 
   const buildable = useMemo(
     () => ({
@@ -229,7 +238,26 @@ export default function App() {
             <Num label="Seed" value={form.seed} onChange={set('seed')} min={1} max={9999} step={1} />
             <Num label="Attempts" value={form.attempts} onChange={set('attempts')} min={4} max={200} step={4} />
           </div>
+          <label className="field">
+            <span className="field-label">Layout</span>
+            <select value={form.layout} onChange={(e) => set('layout')(e.target.value as Layout)}>
+              <option value="grid">Grown on a grid — rooms can be L-shaped</option>
+              <option value="split">Split into rectangles — the original</option>
+            </select>
+          </label>
           <p className="muted">Same seed and programme always give the same plan.</p>
+        </section>
+
+        <section>
+          <button
+            type="button"
+            className="generate"
+            disabled={busy || tooSmall}
+            onClick={() => setSubmitted(form)}
+          >
+            {busy ? 'Generating…' : 'Generate'}
+          </button>
+          {stale && !busy ? <p className="muted">Inputs changed — press Generate to update.</p> : null}
         </section>
       </aside>
 
@@ -238,7 +266,7 @@ export default function App() {
           {svg ? (
             <div className="sheet" dangerouslySetInnerHTML={{ __html: svg }} />
           ) : (
-            <p className="muted">{error ? 'No plan' : 'Generating…'}</p>
+            <p className="muted">{error ? 'No plan' : busy ? 'Generating…' : 'Fill in the details and press Generate.'}</p>
           )}
           {busy ? <div className="badge">generating…</div> : null}
         </div>
