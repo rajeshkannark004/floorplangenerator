@@ -7,6 +7,7 @@ import { generate } from '../engine/src/index.js';
 import { validate } from '../engine/src/validate.js';
 import { sameLine, extent } from '../engine/src/windows.js';
 import { segLen } from '../engine/src/walls.js';
+import { partsOf, minWidth } from '../engine/src/shape.js';
 
 const demo: Brief = {
   plot: { w: 10, d: 15 },
@@ -171,4 +172,68 @@ test('validate returns a list and never throws', () => {
 test('the demo brief validates clean', () => {
   const problems = validate(plan.rooms, plan.walls, plan.windows, plan.footprint, demo, plan.doors);
   assert.deepEqual(problems, []);
+});
+
+// Grid growth: rooms can be L-shaped, so these check parts, not just rects.
+const gridPlan = generate(demo, 7, 12, 0.3, 'grid');
+
+test('grid: same seed and brief give the same plan', () => {
+  const again = generate(demo, 7, 12, 0.3, 'grid');
+  assert.deepEqual(
+    gridPlan.rooms.map((r) => [r.id, partsOf(r)]),
+    again.rooms.map((r) => [r.id, partsOf(r)]),
+  );
+});
+
+test('grid: parts tile the footprint exactly, with no overlap', () => {
+  const fp = footprint(demo);
+  const all = gridPlan.rooms.flatMap((r) => partsOf(r).map((p) => ({ id: r.id, p })));
+  const covered = all.reduce((s, { p }) => s + rectArea(p), 0);
+  assert.ok(Math.abs(covered - fp.w * fp.h) < 1e-6, `covered ${covered} vs ${fp.w * fp.h}`);
+  for (let i = 0; i < all.length; i++) {
+    for (let j = i + 1; j < all.length; j++) {
+      const a = all[i].p;
+      const b = all[j].p;
+      const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+      const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+      assert.ok(w <= 1e-9 || h <= 1e-9, `${all[i].id} overlaps ${all[j].id}`);
+    }
+  }
+});
+
+test('grid: every room is one connected piece', () => {
+  for (const r of gridPlan.rooms) {
+    const parts = partsOf(r);
+    const seen = new Set([0]);
+    const queue = [0];
+    while (queue.length) {
+      const i = queue.pop()!;
+      parts.forEach((q, j) => {
+        if (!seen.has(j) && sharedEdge(parts[i], q)) {
+          seen.add(j);
+          queue.push(j);
+        }
+      });
+    }
+    assert.equal(seen.size, parts.length, `${r.id} is in ${parts.length - seen.size + 1} or more pieces`);
+  }
+});
+
+test('grid: every window sits on an exterior wall of its own room', () => {
+  for (const win of gridPlan.windows) {
+    const [lo, hi] = extent(win);
+    const host = gridPlan.walls.find(
+      (w) => w.exterior && w.roomId === win.roomId && sameLine(w, win) && lo >= extent(w)[0] - 1e-6 && hi <= extent(w)[1] + 1e-6,
+    );
+    assert.ok(host, `${win.roomId} window is not on its own exterior wall`);
+  }
+});
+
+test('minWidth reads an L by its thinner arm', () => {
+  const room = {
+    ...program(demo)[0],
+    rect: { x: 0, y: 0, w: 4, h: 4 },
+    parts: [{ x: 0, y: 0, w: 4, h: 1 }, { x: 0, y: 1, w: 1.5, h: 3 }],
+  };
+  assert.ok(Math.abs(minWidth(room) - 1) < 1e-9, `got ${minWidth(room)}`);
 });
