@@ -1,6 +1,6 @@
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { DEFAULTS, type Brief, type RoomSpec } from '../engine/src/brief.js';
-import { generate } from '../engine/src/index.js';
+import { generate, type Layout } from '../engine/src/index.js';
 import { validate } from '../engine/src/validate.js';
 
 /**
@@ -10,6 +10,7 @@ import { validate } from '../engine/src/validate.js';
  *
  * Usage:
  *   node dist/tools/stress.js --mode preview --briefs 0,1,2
+ *   node dist/tools/stress.js --layout=grid   (results kept under preview-grid)
  *   node dist/tools/stress.js --report
  *
  * Results accumulate in stress-results.json so a slow run can be split across
@@ -131,9 +132,9 @@ function normalise(message: string): string {
   return message.replace(/[0-9]+(\.[0-9]+)?/g, 'N');
 }
 
-function runSeed(b: Brief, seed: number, attempts: number, effort: number): SeedResult {
+function runSeed(b: Brief, seed: number, attempts: number, effort: number, layout: Layout): SeedResult {
   const t0 = Date.now();
-  const plan = generate(b, seed, attempts, effort);
+  const plan = generate(b, seed, attempts, effort, layout);
   const ms = Date.now() - t0;
 
   const problems = validate(plan.rooms, plan.walls, plan.windows, plan.footprint, b, plan.doors).map(normalise);
@@ -142,9 +143,12 @@ function runSeed(b: Brief, seed: number, attempts: number, effort: number): Seed
 }
 
 function report(results: Results) {
-  for (const mode of Object.keys(results)) {
-    const table = results[mode];
-    console.log(`\n=== ${mode} (${MODES[mode as Mode].attempts} attempts, effort ${MODES[mode as Mode].effort}) ===`);
+  for (const key of Object.keys(results)) {
+    const table = results[key];
+    // Keys are the mode, plus "-<layout>" for anything but the splitter.
+    const cfg = MODES[key.split('-')[0] as Mode];
+    if (!cfg) continue;
+    console.log(`\n=== ${key} (${cfg.attempts} attempts, effort ${cfg.effort}) ===`);
     console.log('brief         valid                  avg ms   failures');
     for (const { name } of BRIEFS) {
       const seeds = table[name];
@@ -191,19 +195,22 @@ function main() {
   const which = arg('briefs');
   const indices = which ? which.split(',').map(Number) : BRIEFS.map((_, i) => i);
 
+  const layout = (arg('layout') ?? 'split') as Layout;
+  const key = layout === 'split' ? mode : `${mode}-${layout}`;
+
   const results = load();
-  results[mode] ??= {};
+  results[key] ??= {};
 
   for (const i of indices) {
     const entry = BRIEFS[i];
     if (!entry) continue;
-    results[mode][entry.name] ??= {};
+    results[key][entry.name] ??= {};
     for (const seed of seeds) {
-      if (results[mode][entry.name][String(seed)]) continue;
-      const r = runSeed(entry.brief, seed, cfg.attempts, cfg.effort);
-      results[mode][entry.name][String(seed)] = r;
+      if (results[key][entry.name][String(seed)]) continue;
+      const r = runSeed(entry.brief, seed, cfg.attempts, cfg.effort, layout);
+      results[key][entry.name][String(seed)] = r;
       writeFileSync(FILE, JSON.stringify(results, null, 2));
-      console.log(`${mode} ${entry.name} seed ${seed}: ${r.problems.length ? r.problems.join('; ') : 'clean'} (${r.ms} ms)`);
+      console.log(`${key} ${entry.name} seed ${seed}: ${r.problems.length ? r.problems.join('; ') : 'clean'} (${r.ms} ms)`);
     }
   }
 }
