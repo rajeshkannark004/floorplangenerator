@@ -165,6 +165,9 @@ every edit. Every edit op is a pure function returning a new plan.
   orientation and Vastu, lock rooms and regenerate, Indian room types,
   room-connection input, G+1 with a stair, a stronger layout core.
 - Side-by-side options and the brief-adherence report were dropped.
+- Lock rooms and regenerate the rest is done. Next (03/11/2026): variety
+  without losing professionalism — PLAN.md, *Next up* (V1–V3), then Indian
+  room types.
 - **Step A done (02/11/2026):** `engine/src/grid.ts` (grid growth + annealing,
   L-shaped rooms via `Room.parts`) and `engine/src/shape.ts`. Select with
   `generate(brief, seed, attempts, effort, 'grid')`, the CLI's 5th arg, the

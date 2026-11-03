@@ -106,6 +106,30 @@ the rest — item 2.
 Dropped by the owner (03/11/2026): side-by-side options with named versions,
 and the brief-adherence report.
 
+## Next up: variety without losing professionalism (agreed 03/11/2026)
+
+Owner feedback: the same plot (10 × 15 m) gives the same pattern again and
+again, and "Regenerate rest" reorganises the unlocked rooms rather than
+reshaping them — and sometimes barely changes them.
+
+Why: the same seed gives the same plan by design, and even different seeds
+converge because the search keeps the single best-scoring candidate, which
+for one plot and programme is nearly always the same arrangement (living on
+the road, baths at the back, bedrooms down one side). Regenerate grows the
+unlocked rooms from scratch, so it shuffles them; where the locked rooms
+leave a tight space only one arrangement fits.
+
+Principle: variety comes from architectural choices, not randomness. Every
+variant must be a distinct, defensible plan that passes every check.
+
+| # | Work | Size |
+|---|---|---|
+| V1 | **Quality gate and "Next variant".** Only plans that validate, keep the entry on the road and score within ~10–15 % of the best qualify. The best is shown first; "Next variant" shows the qualifying plan most different from those already seen (distance by where each room sits), like Re-furnish. Undoable; reproducible from seed + variant index. | S |
+| V2 | **Reshape mode for "Regenerate rest".** Two modes: *Reshuffle* (today: a new arrangement of the unlocked rooms) and *Reshape* (keep the arrangement, move walls: start from the current plan on the grid and anneal with locked rooms fixed, steered away from the current shapes, valid plans only). Reshape suits late refinement, reshuffle early exploration. | M |
+| V3 | **Layout types.** Named partis an architect would recognise, each steering seeds and adding a few score terms: *linear* (living at the road, dining and kitchen in the middle, bedrooms at the back), *central living*, *split bedrooms* (master apart from the others), *side corridor* (narrow plots), *service core* (kitchen, baths and utility on one side). The plan is labelled with its type, so it can be explained to a client. Same seed + type = same plan. | M–L |
+
+Order: V1, V2, V3. Then the functionality items below, from item 3.
+
 ## Next: functionality (researched 03/11/2026)
 
 Focus is the generator and the design workflow, not presentation. In order:
@@ -169,6 +193,8 @@ Also still open from earlier work:
   check panel fails on? Default: preferences, reported as a score.
 - **Layout core (item 6).** Finish the grid generator, or replace it with a
   graph-first method. Decide after items 1–4, measured on the stress harness.
+- **Variant threshold (V1).** How far below the best a variant may score
+  (start at 10–15 %) — set by measuring on the stress harness.
 - Room defaults in `brief.ts`, `HALL_DEPTH` and the allowed-pair table are
   plausible values, not verified norms.
 

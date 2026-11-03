@@ -438,10 +438,16 @@ help; a stronger core (item 6) is the real fix.
 
 Tests: 32 pass.
 
+### Direction: variety (03/11/2026)
+
+Owner feedback: one plot keeps giving one pattern, and "Regenerate rest"
+reorganises rather than reshapes. Cause and the agreed plan (V1 quality gate
+and "Next variant" by difference, V2 a Reshape mode, V3 layout types) are in
+PLAN.md, *Next up*.
+
 ## Next task
 
-Item 3 in PLAN.md: Indian room types (pooja, balcony / sit-out, car porch,
-wash area, store).
+V1 in PLAN.md: the quality gate and "Next variant".
 
 ## How to run
 
