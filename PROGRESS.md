@@ -337,9 +337,28 @@ then state bye-laws).
 
 Tests: 26 pass.
 
+### NBC 2016 code check (03/11/2026)
+
+`compliance.ts` and a panel under the sheet. Sources were checked first:
+the BIS guide to NBC 2016 (bis.gov.in) quotes Part 3 cl. 12 — habitable room
+9.5 m² × 2.4 m for the first and 7.5 m² × 2.1 m for the rest, toilet with WC
+2.8 m², kitchen 5 m² without dining. Those are enforced. Window area by
+climate (1/10 hot-dry, 1/6 warm-humid, 1/8 composite and temperate, 1/12
+cold), the 0.3 m² bath ventilator and the 1.8 m kitchen width come only from
+secondary sources; they are reported and labelled as such. Setbacks, ground
+coverage and FAR are state bye-law matters, so they are checked only against
+limits the user enters. All sizes are clear, inside the walls.
+
+On the demo at composite climate three rooms fail window area with 1.2 m
+windows; "Widen short windows" grows them along their wall and clears all
+three. Both baths get advice: no outside wall, so a ventilator to a shaft or
+an exhaust fan. Room heights are not checked (2D).
+
+Tests: 28 pass.
+
 ## Next task
 
-Indian-norms compliance panel (NBC 2016 first), then options side by side.
+Options side by side and named versions; then the brief-adherence report.
 The grid work below is still open.
 
 ### Earlier next task (02/11/2026)

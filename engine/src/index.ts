@@ -21,6 +21,7 @@ export * from './furniture.js';
 export * from './edit.js';
 export * from './schedule.js';
 export * from './dxf.js';
+export * from './compliance.js';
 export { GRID_CELL } from './grid.js';
 
 /**

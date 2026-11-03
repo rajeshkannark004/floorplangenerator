@@ -9,6 +9,10 @@ import {
   scheduleCSV,
   planDXF,
   renderSVG,
+  checkCompliance,
+  fixWindows,
+  DEFAULT_COMPLIANCE,
+  type ComplianceOptions,
   type Brief,
   type Layout,
   type Plan,
@@ -16,6 +20,7 @@ import {
 } from '../../engine/src/index.js';
 import Editor from './Editor.js';
 import ScheduleTable from './Schedule.js';
+import CompliancePanel from './Compliance.js';
 import { download, printAtScale } from './exports.js';
 
 interface FormState {
@@ -232,6 +237,15 @@ export default function App() {
   };
 
   const schedule = useMemo(() => (plan && brief && !plan.infeasible ? areaSchedule(plan, brief) : null), [plan, brief]);
+  const [codeOpts, setCodeOpts] = useState<ComplianceOptions>(DEFAULT_COMPLIANCE);
+  const checks = useMemo(
+    () => (plan && brief && !plan.infeasible ? checkCompliance(plan, brief, codeOpts) : []),
+    [plan, brief, codeOpts],
+  );
+  const shortWindows = checks.some((c) => c.status === 'fail' && c.rule.startsWith('Window area'));
+  const widenWindows = () => {
+    if (plan && brief) commit(fixWindows(plan, brief, codeOpts));
+  };
   const [printScale, setPrintScale] = useState(100);
   const name = plan ? `floorplan-seed${plan.seed}` : 'floorplan';
 
@@ -415,6 +429,9 @@ export default function App() {
               {stats ? ` · score ${stats.score.toFixed(2)} · ${Math.round(stats.ms)} ms` : ''}
               {history && history.at > 0 ? ` · ${history.at} edit${history.at > 1 ? 's' : ''}` : ''}
             </p>
+          ) : null}
+          {schedule ? (
+            <CompliancePanel checks={checks} opts={codeOpts} onOpts={setCodeOpts} onFixWindows={shortWindows ? widenWindows : undefined} />
           ) : null}
           {schedule ? <ScheduleTable s={schedule} onCSV={exportCSV} /> : null}
         </div>

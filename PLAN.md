@@ -227,8 +227,14 @@ blogs, academic reviews and contract samples, so read them as directional.
 Order: quick wins first — 5, 1, 4 — then 3, then 2, then 6 and 7.
 
 Status (03/11/2026): **5, 1 and 4 are done** — area schedule with CSV,
-dimension chains with typed sizes, DXF / SVG / scaled-PDF export. Details and
-checks in PROGRESS.md. Next is 3.
+dimension chains with typed sizes, DXF / SVG / scaled-PDF export. **3 is
+in**: NBC 2016 room sizes from the BIS guide (Part 3 cl. 12), light and
+ventilation from secondary sources (labelled), bye-law limits as user input,
+and a one-click window fix. Details and checks in PROGRESS.md. Next is 2.
+
+Still open on 3: read the NBC text itself for the secondary-sourced rules;
+state bye-law presets (setbacks, coverage, FAR by plot size); room heights
+once the brief carries them.
 
 The rule pack values for 3 must come from the code text (NBC 2016 Part 3 and
 Part 8, and the state bye-law in use), not from secondary sources; each rule

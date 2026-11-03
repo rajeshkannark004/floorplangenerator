@@ -13,6 +13,7 @@ import { setDoor, setWindow, moveWall, wallLines, openingRange, rotateFurniture,
 import { roomArea } from '../engine/src/shape.js';
 import { areaSchedule, carpetArea, scheduleCSV } from '../engine/src/schedule.js';
 import { planDXF } from '../engine/src/dxf.js';
+import { checkCompliance, fixWindows, DEFAULT_COMPLIANCE } from '../engine/src/compliance.js';
 import { dimensionChains } from '../engine/src/render-svg.js';
 
 const demo: Brief = {
@@ -351,4 +352,36 @@ test('re-furnishing offers other good arrangements, all clash-free', () => {
   }
   assert.ok(differs > 0, 'some step gives a different layout');
   assert.deepEqual(placeFurniture(plan, t, 0), first, 'step 0 is stable');
+});
+
+test('NBC checks: room sizes, ventilation and entered bye-law limits', () => {
+  const checks = checkCompliance(plan, demo);
+  const rooms = (rule: RegExp) => checks.filter((c) => rule.test(c.rule));
+  assert.equal(rooms(/^Habitable/).length, plan.rooms.filter((r) => ['living', 'dining', 'bedroom'].includes(r.type)).length);
+  assert.equal(rooms(/^Toilet/).length, plan.rooms.filter((r) => r.type === 'bath').length);
+  assert.ok(checks.every((c) => c.ref && c.detail), 'every check cites a source');
+  assert.ok(!checks.some((c) => c.source === 'bye-law'), 'no bye-law checks without limits');
+
+  // A shrunken bath fails the 2.8 m² toilet rule.
+  const bath = plan.rooms.find((r) => r.type === 'bath')!;
+  const tiny = { ...plan, rooms: plan.rooms.map((r) => (r === bath ? { ...r, rect: { ...r.rect, w: 1.5, h: 1.5 }, parts: undefined } : r)) };
+  assert.equal(checkCompliance(tiny, demo).find((c) => c.roomId === bath.id && /^Toilet/.test(c.rule))!.status, 'fail');
+
+  const strict = checkCompliance(plan, demo, { ...DEFAULT_COMPLIANCE, limits: { coverage: 0.1, front: 1, far: 5 } });
+  assert.equal(strict.find((c) => /coverage/.test(c.rule))!.status, 'fail');
+  assert.equal(strict.find((c) => /^FAR/.test(c.rule))!.status, 'pass');
+  assert.equal(strict.find((c) => /^Front/.test(c.rule))!.status, 'pass', '1.5 m less half a wall clears 1 m');
+});
+
+test('fixing windows clears the ventilation failures it can', () => {
+  const opts = { ...DEFAULT_COMPLIANCE, climate: 'warm-humid' as const };
+  const fails = (p: typeof plan) => checkCompliance(p, demo, opts).filter((c) => /^Window area/.test(c.rule) && c.status === 'fail').length;
+  const before = fails(plan);
+  assert.ok(before > 0, 'warm-humid 1/6 fails somewhere on the demo');
+  const fixed = fixWindows(plan, demo, opts);
+  assert.ok(fails(fixed) < before, `${before} -> ${fails(fixed)}`);
+  for (const w of fixed.windows) {
+    const [lo, hi] = openingRange(w);
+    assert.ok(hi - lo >= 0.4 && lo >= -1e-9, 'windows stay on the plan');
+  }
 });

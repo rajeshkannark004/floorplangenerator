@@ -65,7 +65,10 @@ and layout; press Generate. The plan is then editable:
 - export DXF (millimetres, for AutoCAD and other CAD tools), SVG, or print to
   scale (1:50 / 1:100 / 1:200) and save as PDF
 
-Dimension lines run round the plan and update as you edit. Under the sheet:
+Dimension lines run round the plan and update as you edit. A code-check
+panel tests the plan against NBC 2016 (room sizes, toilet and kitchen areas,
+window area for your climate, bath ventilation) and any local bye-law limits
+you enter, and can widen windows that fall short. Under the sheet:
 validation problems, and an area schedule (carpet and built-up area in m² and
 sq ft, ground coverage, FAR) with CSV download.
 

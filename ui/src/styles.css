@@ -404,3 +404,102 @@ button.link {
   font: inherit;
   font-size: 13px;
 }
+
+.compliance summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.compliance .bad {
+  color: var(--warn);
+}
+
+.compliance .good {
+  color: var(--accent);
+}
+
+.compliance .settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin: 8px 0 4px;
+  font-size: 12px;
+}
+
+.compliance .settings .muted {
+  margin: 0;
+}
+
+.limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+
+.limit input,
+.limit select {
+  width: 64px;
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font: inherit;
+  color: var(--ink);
+}
+
+.limit select {
+  width: auto;
+}
+
+.checks {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+.checks li {
+  display: grid;
+  grid-template-columns: 16px minmax(220px, 1.2fr) minmax(200px, 1.4fr) minmax(160px, 1fr);
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.checks .mark {
+  font-weight: 700;
+}
+
+.checks li.pass .mark {
+  color: var(--accent);
+}
+
+.checks li.fail .mark,
+.checks li.fail .rule {
+  color: var(--warn);
+}
+
+.checks li.advice .mark {
+  color: #9a6b00;
+}
+
+.checks .ref {
+  color: var(--muted);
+}
+
+.checks .ref.secondary {
+  font-style: italic;
+}
+
+@media (max-width: 820px) {
+  .checks li {
+    grid-template-columns: 16px 1fr;
+  }
+  .checks .detail,
+  .checks .ref {
+    grid-column: 2;
+  }
+}
