@@ -9,7 +9,7 @@ import { sameLine, extent } from '../engine/src/windows.js';
 import { segLen } from '../engine/src/walls.js';
 import { partsOf, minWidth } from '../engine/src/shape.js';
 import { placeFurniture, inDoorSwing } from '../engine/src/furniture.js';
-import { setDoor, setWindow, moveWall, wallLines, openingRange, rotateFurniture, MIN_PART } from '../engine/src/edit.js';
+import { setDoor, setWindow, moveWall, wallLines, openingRange, rotateFurniture, restoreLocked, MIN_PART } from '../engine/src/edit.js';
 import { roomArea } from '../engine/src/shape.js';
 import { areaSchedule, carpetArea, scheduleCSV } from '../engine/src/schedule.js';
 import { planDXF } from '../engine/src/dxf.js';
@@ -412,4 +412,36 @@ test('with a road side, the entry is on it and Vastu is reported', () => {
   assert.ok(r.items.some((i) => i.label === 'Kitchen') && r.items.some((i) => i.label === 'Entrance'));
   assert.equal(r.items.find((i) => i.label === 'Entrance')!.zone, 'E');
   assert.ok(r.score >= 0 && r.score <= 100);
+});
+
+test('locked rooms come back unchanged and the rest is laid out around them', () => {
+  const base = generate(demo, 7, 30, 0.4, 'grid');
+  const keep = base.rooms.filter((r) => r.type === 'kitchen' || r.type === 'bedroom');
+  const again = generate(demo, 8, 30, 0.4, 'grid', { locked: keep });
+  for (const k of keep) {
+    const r = again.rooms.find((x) => x.id === k.id)!;
+    assert.deepEqual(partsOf(r).map((p) => [p.x, p.y, p.w, p.h].map((n) => +n.toFixed(6))).sort(),
+      partsOf(k).map((p) => [p.x, p.y, p.w, p.h].map((n) => +n.toFixed(6))).sort(), `${k.id} kept`);
+  }
+  const area = again.rooms.reduce((s, r) => s + roomArea(r), 0);
+  assert.ok(Math.abs(area - again.footprint.w * again.footprint.h) < 1e-6, 'still tiles the footprint');
+  const moved = again.rooms.filter((r) => !keep.includes(r) && JSON.stringify(r.rect) !== JSON.stringify(base.rooms.find((x) => x.id === r.id)?.rect));
+  assert.ok(moved.length > 0, 'the unlocked rooms were laid out afresh');
+});
+
+test('a locked room dragged off the grid comes back exactly, with its doors', () => {
+  const base = generate(demo, 7, 30, 0.4, 'grid');
+  const kitchen = base.rooms.find((r) => r.type === 'kitchen')!;
+  // Drag one of the kitchen's interior walls 10 cm, off the 0.3 m grid.
+  const line = wallLines(base.walls).find((l) => partsOf(kitchen).some((p) =>
+    (l.axis === 'v' ? [p.x, p.x + p.w] : [p.y, p.y + p.h]).some((e) => Math.abs(e - l.at) < 1e-6)))!;
+  const edited = moveWall(base, line, line.at + 0.1) ?? moveWall(base, line, line.at - 0.1)!;
+  const locked = edited.rooms.find((r) => r.id === kitchen.id)!;
+  const shape = (r: typeof kitchen) => JSON.stringify(partsOf(r).map((q) => [q.x, q.y, q.w, q.h].map((v) => v.toFixed(4))).sort());
+  const raw = generate(demo, 8, 30, 0.4, 'grid', { locked: [locked] });
+  assert.notEqual(shape(raw.rooms.find((r) => r.id === kitchen.id)!), shape(locked), 'the grid snaps it');
+  const back = restoreLocked(raw, { ...edited, locked: [kitchen.id] }, [kitchen.id]);
+  assert.equal(shape(back.rooms.find((r) => r.id === kitchen.id)!), shape(locked), 'restored exactly');
+  const area = back.rooms.reduce((s, r) => s + roomArea(r), 0);
+  assert.ok(Math.abs(area - back.footprint.w * back.footprint.h) < 1e-6, 'still tiles the footprint');
 });

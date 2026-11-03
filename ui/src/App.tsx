@@ -11,6 +11,8 @@ import {
   renderSVG,
   checkCompliance,
   fixWindows,
+  restoreLocked,
+  partsOf,
   DEFAULT_COMPLIANCE,
   type ComplianceOptions,
   type Brief,
@@ -67,6 +69,8 @@ const INITIAL: FormState = {
 
 /** Preview runs at reduced search effort; the CLI keeps the thorough settings. */
 const PREVIEW_EFFORT = 0.6;
+/** Seeds "Regenerate rest" tries before settling for a plan with problems. */
+const REGEN_TRIES = 3;
 
 function toBrief(f: FormState): Brief {
   const rooms: RoomSpec[] = [
@@ -252,6 +256,57 @@ export default function App() {
     [plan, brief, codeOpts],
   );
   const shortWindows = checks.some((c) => c.status === 'fail' && c.rule.startsWith('Window area'));
+  // Lay out the unlocked rooms afresh around the locked ones, as one undoable
+  // edit. Each click moves to the next seed, so it gives a new variant.
+  const lockedRooms = plan && !plan.infeasible ? plan.rooms.filter((r) => plan.locked?.includes(r.id)) : [];
+  const regenerateRest = () => {
+    if (!plan || !brief || !lockedRooms.length) return;
+    setBusy(true);
+    setTimeout(() => setTimeout(() => {
+      try {
+        const t0 = performance.now();
+        // Locks can leave few valid layouts: try a few seeds, stop at the
+        // first clean plan, else keep the one with the fewest problems.
+        let next: Plan | null = null;
+        let fewest = Infinity;
+        for (let k = 1; k <= REGEN_TRIES; k++) {
+          const raw = generate(brief, plan.seed + k, submitted?.attempts ?? INITIAL.attempts, PREVIEW_EFFORT, 'grid', { locked: lockedRooms, avoid: plan.rooms });
+          // Put the locked rooms back exactly, with their doors and windows.
+          const cand = raw.infeasible ? raw : restoreLocked(raw, plan, plan.locked ?? []);
+          const n = cand.infeasible ? Infinity : validate(cand.rooms, cand.walls, cand.windows, cand.footprint, brief, cand.doors).length;
+          if (!next || n < fewest) { next = cand; fewest = n; }
+          if (n === 0) break;
+        }
+        if (!next) return;
+        const ms = performance.now() - t0;
+        if (next.infeasible) {
+          setError(next.infeasible);
+        } else {
+          // Locked rooms keep their furniture when they came back unchanged.
+          const shape = (p: Plan, id: string) => {
+            const r = p.rooms.find((x) => x.id === id);
+            return r ? JSON.stringify(partsOf(r).map((q) => [q.x, q.y, q.w, q.h].map((v) => v.toFixed(4))).sort()) : '';
+          };
+          const same = (id: string) => shape(next, id) === shape(plan, id);
+          let keep = (plan.furniture ?? []).filter((f) => plan.locked!.includes(f.roomId) && same(f.roomId));
+          // Doors are placed afresh, so a kept piece can now sit in a new door
+          // swing; such a room is furnished afresh too.
+          const clashing = furnitureClashes({ ...next, furniture: keep }, brief.wallThickness);
+          const redo = new Set([...clashing].map((i) => keep[i].roomId));
+          keep = keep.filter((f) => !redo.has(f.roomId));
+          const kept = new Set(keep.map((f) => f.roomId));
+          const fresh = placeFurniture(next, brief.wallThickness).filter((f) => !kept.has(f.roomId));
+          commit({ ...next, furniture: [...keep, ...fresh], locked: plan.locked });
+          setStats({ score: next.score, ms });
+          setError(null);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+      setBusy(false);
+    }, 16), 0);
+  };
+
   const widenWindows = () => {
     if (plan && brief) commit(fixWindows(plan, brief, codeOpts));
   };
@@ -402,6 +457,14 @@ export default function App() {
           <button type="button" onClick={undo} disabled={!canUndo} title="Ctrl+Z">Undo</button>
           <button type="button" onClick={redo} disabled={!canRedo} title="Ctrl+Y">Redo</button>
           <button type="button" onClick={refurnish} disabled={!plan || !!plan.infeasible}>Re-furnish</button>
+          <button
+            type="button"
+            onClick={regenerateRest}
+            disabled={busy || !lockedRooms.length}
+            title={lockedRooms.length ? 'Lay out the unlocked rooms again around the locked ones' : 'Click a room and lock it (L) first'}
+          >
+            Regenerate rest{lockedRooms.length ? ` (${lockedRooms.length} locked)` : ''}
+          </button>
           <span className="spacer" />
           <span className="group">
             <select value={printScale} onChange={(e) => setPrintScale(Number(e.target.value))} title="Print scale">

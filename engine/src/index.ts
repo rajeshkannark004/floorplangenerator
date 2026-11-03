@@ -3,7 +3,7 @@ import type { Rect } from './geometry.js';
 import { subdivide, mulberry32 } from './subdivide.js';
 import { growGrid, refineGrid, gridRooms, type GridPlan, type Orient } from './grid.js';
 import { vastuCost } from './orient.js';
-import { roomArea } from './shape.js';
+import { roomArea, partsOf } from './shape.js';
 import { layoutScore } from './score.js';
 import { buildWalls } from './walls.js';
 import { placeWindows } from './windows.js';
@@ -61,6 +61,11 @@ function problemsOf(plan: Plan, brief: Brief): string[] {
   return validate(plan.rooms, plan.walls, plan.windows, plan.footprint, brief, plan.doors);
 }
 
+/** Ranking cost, for "Regenerate rest", of an unlocked room left exactly as it was, and of a layout left wholly unchanged. */
+const SAME_ROOM = 15;
+const SAME_LAYOUT = 90;
+const shapeKey = (r: Room) => JSON.stringify(partsOf(r).map((q) => [q.x, q.y, q.w, q.h].map((v) => v.toFixed(3))).sort());
+
 /** Ranking cost of each validation problem a candidate has. */
 const PROBLEM_WEIGHT = 100;
 /** Grid candidates that get the expensive local search; the rest are ranked and dropped. */
@@ -69,7 +74,26 @@ const GRID_FINALISTS = 24;
 const GRID_REFINE_MOVES = 4200;
 
 /** The best of `attempts` seeded candidates, optionally with a circulation spine. */
-function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: number, useHall: boolean, layout: Layout): Plan | null {
+/** Options beyond the brief. */
+export interface GenerateOptions {
+  /**
+   * Rooms to keep as they are, by id: the generator lays out only the rest
+   * around them. Forces the grid layout.
+   */
+  locked?: Room[];
+  /**
+   * The layout being replaced: candidates that leave the unlocked rooms as
+   * they were here rank lower, so "Regenerate rest" always shows something
+   * new when the locked rooms leave room for it.
+   */
+  avoid?: Room[];
+}
+
+function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: number, useHall: boolean, layout: Layout, opts: GenerateOptions): Plan | null {
+  const locked = opts.locked?.length ? new Map(opts.locked.map((r) => [r.id, partsOf(r)])) : undefined;
+  // A locked hall only exists in the search that has one.
+  if (locked && !useHall && opts.locked!.some((r) => r.type === 'hall')) return null;
+  if (locked) layout = 'grid';
   const rooms0: Room[] = useHall ? withHall(program(brief), fp) : program(brief);
   const targets = normaliseAreas(rooms0, fp);
   let best: Plan | null = null;
@@ -98,6 +122,13 @@ function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: 
     const windows = placeWindows(rooms, walls, brief.windowWidth, doors);
     const problems = validate(rooms, walls, windows, fp, brief, doors).length;
     let score = layoutScore(rooms, fp) + stuck * 60 + overload * 15 + problems * PROBLEM_WEIGHT;
+    if (opts.avoid?.length) {
+      const was = new Map(opts.avoid.map((r) => [r.id, shapeKey(r)]));
+      const lockedIds = new Set((opts.locked ?? []).map((r) => r.id));
+      const free = rooms.filter((r) => !lockedIds.has(r.id));
+      const same = free.filter((r) => was.get(r.id) === shapeKey(r)).length;
+      score += same * SAME_ROOM + (free.length && same === free.length ? SAME_LAYOUT : 0);
+    }
     if (orient) {
       // With a road side known, the entry belongs on it.
       const entry = doors.find((d) => d.entry);
@@ -118,7 +149,7 @@ function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: 
     const pool: { g: GridPlan; rng: () => number; i: number }[] = [];
     for (let i = 0; i < attempts; i++) {
       const rng = mulberry32(seed * 100003 + i);
-      pool.push({ g: growGrid(fp, targets, rng, effort, orient), rng, i });
+      pool.push({ g: growGrid(fp, targets, rng, effort, orient, locked), rng, i });
     }
     pool.sort((a, b) => a.g.score - b.g.score || a.i - b.i);
     for (const { g, rng, i } of pool.slice(0, GRID_FINALISTS)) {
@@ -142,14 +173,14 @@ function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: 
  * width. Try the plain programme first; fall back to the spine only when the
  * door rules cannot be satisfied without it.
  */
-export function generate(brief: Brief, seed = 1, attempts = 400, effort = 1, layout: Layout = 'split'): Plan {
-  const first = generateOnce(brief, seed, attempts, effort, layout);
+export function generate(brief: Brief, seed = 1, attempts = 400, effort = 1, layout: Layout = 'split', opts: GenerateOptions = {}): Plan {
+  const first = generateOnce(brief, seed, attempts, effort, layout, opts);
   if (!brief.vastu || !brief.orientation || first.infeasible || !shortfall(first, brief)) return first;
   // Vastu is a preference, never worth a broken plan or an entry away from
   // the road. Pulling rooms towards their zones can leave no such layout in
   // the sample; then plan without it and keep whichever falls shorter, the
   // Vastu plan on a tie.
-  const plain = generateOnce({ ...brief, vastu: false }, seed, attempts, effort, layout);
+  const plain = generateOnce({ ...brief, vastu: false }, seed, attempts, effort, layout, opts);
   return shortfall(plain, brief) < shortfall(first, brief) ? plain : first;
 }
 
@@ -160,7 +191,7 @@ function shortfall(plan: Plan, brief: Brief): number {
   return problemsOf(plan, brief).length * 2 + (brief.orientation && !onRoad ? 1 : 0);
 }
 
-function generateOnce(brief: Brief, seed: number, attempts: number, effort: number, layout: Layout): Plan {
+function generateOnce(brief: Brief, seed: number, attempts: number, effort: number, layout: Layout, opts: GenerateOptions): Plan {
   const fp = footprint(brief);
 
   const reason = infeasibleReason(brief, fp);
@@ -168,11 +199,11 @@ function generateOnce(brief: Brief, seed: number, attempts: number, effort: numb
     return { rooms: [], walls: [], windows: [], doors: [], footprint: fp, score: 0, seed, infeasible: reason };
   }
 
-  const plain = search(brief, fp, seed, attempts, effort, false, layout);
+  const plain = search(brief, fp, seed, attempts, effort, false, layout, opts);
   const plainProblems = plain ? problemsOf(plain, brief) : [];
   if (plain && !plainProblems.length) return plain;
 
-  const spined = search(brief, fp, seed, attempts, effort, true, layout);
+  const spined = search(brief, fp, seed, attempts, effort, true, layout, opts);
   const spinedProblems = spined ? problemsOf(spined, brief) : [];
   if (spined && !spinedProblems.length) return spined;
 

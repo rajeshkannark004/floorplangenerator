@@ -214,3 +214,79 @@ export function furnitureClashes(plan: Plan, wallThickness: number): Set<number>
   return out;
 }
 
+
+/**
+ * After "Regenerate rest": put each locked room back exactly as it was.
+ *
+ * The generator works on a 0.3 m grid, so a locked room whose walls were
+ * dragged off it comes back snapped by up to half a cell. Each such wall is
+ * moved back with `moveWall`, which carries the neighbour's edge with it.
+ * Then the locked rooms' doors and windows return to where they were, where
+ * the same wall still holds them — doors only to the same neighbour — so the
+ * room's furniture still fits.
+ */
+export function restoreLocked(next: Plan, prev: Plan, ids: string[]): Plan {
+  let p = next;
+  const E = 1e-6;
+  for (const id of ids) {
+    const old = prev.rooms.find((r) => r.id === id);
+    if (!old) continue;
+    for (const axis of ['v', 'h'] as const) {
+      const wanted = new Set<number>();
+      for (const q of partsOf(old)) {
+        if (axis === 'v') { wanted.add(q.x); wanted.add(q.x + q.w); } else { wanted.add(q.y); wanted.add(q.y + q.h); }
+      }
+      for (const want of wanted) {
+        const cur = p.rooms.find((r) => r.id === id);
+        if (!cur) break;
+        // The room's own edge nearest the wanted line, and the span it covers.
+        let edge: number | undefined;
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const q of partsOf(cur)) {
+          for (const e of axis === 'v' ? [q.x, q.x + q.w] : [q.y, q.y + q.h]) {
+            if (Math.abs(e - want) > 0.31) continue;
+            if (edge === undefined || Math.abs(e - want) < Math.abs(edge - want) - E) edge = e;
+          }
+        }
+        if (edge === undefined || Math.abs(edge - want) < E) continue;
+        for (const q of partsOf(cur)) {
+          const [a, b, s0, s1] = axis === 'v' ? [q.x, q.x + q.w, q.y, q.y + q.h] : [q.y, q.y + q.h, q.x, q.x + q.w];
+          if (Math.abs(a - edge) < E || Math.abs(b - edge) < E) { lo = Math.min(lo, s0); hi = Math.max(hi, s1); }
+        }
+        const line = wallLines(p.walls).find((l) => l.axis === axis && Math.abs(l.at - edge!) < E && Math.min(l.hi, hi) - Math.max(l.lo, lo) > E);
+        if (line) p = moveWall(p, line, want) ?? p;
+      }
+    }
+  }
+
+  const locked = new Set(ids);
+  const same = (x: { a: string; b: string | null }, y: { a: string; b: string | null }) =>
+    (x.a === y.a && x.b === y.b) || (x.a === y.b && x.b === y.a);
+  for (const d of prev.doors) {
+    if (!locked.has(d.a) && !(d.b && locked.has(d.b))) continue;
+    const i = p.doors.findIndex((n) => same(n, d));
+    if (i < 0) continue;
+    // Try the old opening; setDoor hands back the same plan when no wall the
+    // two rooms share can hold it, and then the new door stays.
+    const trial = { ...p, doors: p.doors.map((n, k) => (k === i ? { ...n, ...d } : n)) };
+    const [lo, hi] = openingRange(d);
+    const fitted = setDoor(trial, i, lo, hi);
+    if (fitted !== trial) p = fitted;
+  }
+  for (const id of ids) {
+    const olds = prev.windows.filter((w) => w.roomId === id);
+    if (!olds.length) continue;
+    const others = p.windows.filter((w) => w.roomId !== id);
+    let trial: Plan = { ...p, windows: [...others, ...olds] };
+    let ok = true;
+    for (let k = others.length; k < trial.windows.length && ok; k++) {
+      const [lo, hi] = openingRange(trial.windows[k]);
+      const fitted = setWindow(trial, k, lo, hi);
+      if (fitted === trial) ok = false;
+      else trial = fitted;
+    }
+    if (ok) p = trial;
+  }
+  return p;
+}

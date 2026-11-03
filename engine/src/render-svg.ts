@@ -17,6 +17,8 @@ export interface Plan {
   seed: number;
   /** Placed furniture. When absent, `renderSVG` places it on the fly; the editor stores it so edits stick. */
   furniture?: Furniture[];
+  /** Ids of rooms the user locked: "Regenerate rest" keeps them as they are. */
+  locked?: string[];
   /** Set when the brief cannot be built at all; the plan is then not a plan. */
   infeasible?: string;
 }
@@ -152,10 +154,15 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60, fur
     for (const f of plan.furniture ?? placeFurniture(plan, brief.wallThickness)) parts.push(furnitureSVG(f, px, py, scale));
   }
 
-  // walls
-  for (const w of plan.walls) {
-    const sw = (w.exterior ? t : t * 0.75).toFixed(2);
-    parts.push(`<line x1="${px(w.x1).toFixed(1)}" y1="${py(w.y1).toFixed(1)}" x2="${px(w.x2).toFixed(1)}" y2="${py(w.y2).toFixed(1)}" stroke="#23272b" stroke-width="${sw}" stroke-linecap="square"/>`);
+  // walls: one path per thickness. Separate lines each anti-alias their own
+  // edges, so where several meet the edges stack and the junction prints as
+  // a dark pillar; one path is painted once.
+  for (const exterior of [false, true]) {
+    const d = plan.walls
+      .filter((w) => w.exterior === exterior)
+      .map((w) => `M ${px(w.x1).toFixed(1)} ${py(w.y1).toFixed(1)} L ${px(w.x2).toFixed(1)} ${py(w.y2).toFixed(1)}`)
+      .join(' ');
+    if (d) parts.push(`<path d="${d}" fill="none" stroke="#23272b" stroke-width="${(exterior ? t : t * 0.75).toFixed(2)}" stroke-linecap="square"/>`);
   }
 
   // doors: knock the wall out, then draw the leaf and its swing. The swing

@@ -87,6 +87,8 @@ export interface GridPlan {
   orient: Orient | null;
   /** Vastu role per room index, when planning for Vastu. */
   roles: VastuRole[] | null;
+  /** 1 for a room the user locked: its cells never change hands. */
+  fixed: Uint8Array;
 }
 
 /**
@@ -349,8 +351,8 @@ function toParts(ids: number[], cols: number, fp: Rect, cw: number, ch: number):
  * Rooms come back with `parts` set and `rect` as their bounding box. Every
  * random choice comes from `rng`, so a seed always reproduces its plan.
  */
-export function growLayout(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: Orient | null = null): Room[] {
-  const g = growGrid(fp, rooms, rng, effort, orient);
+export function growLayout(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: Orient | null = null, locked?: Map<string, Rect[]>): Room[] {
+  const g = growGrid(fp, rooms, rng, effort, orient, locked);
   refineGrid(g, rng, Math.round(REFINE_MOVES * effort));
   return gridRooms(g);
 }
@@ -360,7 +362,7 @@ export function growLayout(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient
  * search. Cheap enough to run for every attempt, so candidates can be ranked
  * on `score` and only the best few refined.
  */
-export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: Orient | null = null): GridPlan {
+export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: Orient | null = null, locked?: Map<string, Rect[]>): GridPlan {
   const cols = Math.max(1, Math.round(fp.w / GRID_CELL));
   const rows = Math.max(1, Math.round(fp.h / GRID_CELL));
   const cw = fp.w / cols;
@@ -375,26 +377,48 @@ export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: 
     cells[i].push(at(c, r));
   };
 
+  // Locked rooms first: every cell whose centre lies in one of their parts.
+  // A room laid out on this same grid comes back exactly; one whose walls were
+  // dragged off the grid snaps to the nearest cells.
+  const fixed = new Uint8Array(rooms.length);
+  if (locked) {
+    rooms.forEach((room, i) => {
+      const parts = locked.get(room.id);
+      if (!parts) return;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const x = fp.x + (c + 0.5) * cw;
+          const y = fp.y + (r + 0.5) * ch;
+          if (owner[at(c, r)] === -1 && parts.some((p) => x > p.x && x < p.x + p.w && y > p.y && y < p.y + p.h)) claim(i, c, r);
+        }
+      }
+      if (cells[i].length) fixed[i] = 1;
+    });
+  }
+
   // The hall, if any, is a full-width strip, as in the splitter's spine. Zones
   // and a hall that only goes where it is needed are the next step.
   const hall = rooms.findIndex((r) => r.type === 'hall');
-  if (hall >= 0) {
+  if (hall >= 0 && fixed[hall]) {
+    // A locked hall keeps its own cells.
+  } else if (hall >= 0) {
     const depth = Math.min(rows, Math.max(1, Math.round(HALL_DEPTH / ch)));
     const margin = Math.ceil(1.4 / ch);
     const lo = margin;
     const hi = rows - depth - margin;
     const r0 = hi >= lo ? lo + Math.floor(rng() * (hi - lo + 1)) : Math.floor((rows - depth) / 2);
-    for (let r = r0; r < r0 + depth; r++) for (let c = 0; c < cols; c++) claim(hall, c, r);
+    for (let r = r0; r < r0 + depth; r++) for (let c = 0; c < cols; c++) if (isFree(c, r)) claim(hall, c, r);
     box[hall] = { c0: 0, r0, c1: cols, r1: r0 + depth };
   }
 
   // Targets in cells, scaled so the rooms fill whatever the hall leaves.
-  const others = rooms.map((_, i) => i).filter((i) => i !== hall);
-  const free0 = cols * rows - (hall >= 0 ? cells[hall].length : 0);
+  const others = rooms.map((_, i) => i).filter((i) => i !== hall && !fixed[i]);
+  const taken = rooms.reduce((s, _, i) => s + (i === hall || fixed[i] ? cells[i].length : 0), 0);
+  const free0 = cols * rows - taken;
   const sumArea = others.reduce((s, i) => s + rooms[i].area, 0);
-  const target = rooms.map((r, i) => (i === hall ? cells[i].length : Math.max(1, Math.round((r.area / sumArea) * free0))));
+  const target = rooms.map((r, i) => (i === hall || fixed[i] ? cells[i].length : Math.max(1, Math.round((r.area / sumArea) * free0))));
   const roles = orient?.vastu ? (() => { const m = vastuRoles(rooms); return rooms.map((r) => m.get(r.id)!); })() : null;
-  const plan: GridPlan = { fp, cells, score: 0, cols, rows, cw, ch, owner, target, rooms, hall, orient, roles };
+  const plan: GridPlan = { fp, cells, score: 0, cols, rows, cw, ch, owner, target, rooms, hall, orient, roles, fixed };
 
   // 1. Seeds. Sample a few free cells per room and keep the best one: away
   // from the seeds already down (up to the room's own size — further gains
@@ -402,6 +426,14 @@ export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: 
   // end up sharing a wall, beside the hall if it may open onto that, and
   // towards the boundary if it needs daylight.
   const seeds: { i: number; x: number; y: number; reach: number }[] = [];
+  // Locked rooms are seeds already down: others keep clear of them, and the
+  // rooms that may open onto one start a room-width away.
+  for (let i = 0; i < rooms.length; i++) {
+    if (!fixed[i]) continue;
+    let sx = 0, sy = 0;
+    for (const k of cells[i]) { sx += (k % cols) + 0.5; sy += Math.floor(k / cols) + 0.5; }
+    seeds.push({ i, x: (sx / cells[i].length) * cw, y: (sy / cells[i].length) * ch, reach: Math.sqrt(cells[i].length * cw * ch) });
+  }
   const samples = Math.max(8, Math.round(SEED_SAMPLES * effort));
   const rank = (i: number) => SEED_ORDER.indexOf(rooms[i].type);
   const order = shuffle(others.slice(), rng).sort((a, b) => rank(a) - rank(b));
@@ -560,6 +592,7 @@ export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: 
       let pick = -1;
       let pickKey = -Infinity;
       for (const [o, n] of contacts) {
+        if (fixed[o]) continue;
         // Need dominates contact: a pocket is floor some room is short of, not
         // a prize for whoever happens to wrap around it.
         const key = (o === hall ? -1e6 : 0) + ((target[o] - cells[o].length) / target[o]) * 4 + n * 0.5;
@@ -576,6 +609,27 @@ export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: 
       cells[o].push(k);
     }
   }
+  // A pocket walled in by locked rooms and the outside has no growing room to
+  // take it; it goes to the locked room beside it, which grows by those cells.
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (let k = 0; k < owner.length; k++) {
+      if (owner[k] !== -1) continue;
+      const c = k % cols;
+      const r = Math.floor(k / cols);
+      for (const [dc, dr] of DIRS) {
+        const cc = c + dc;
+        const rr = r + dr;
+        if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
+        const o = owner[at(cc, rr)];
+        if (o < 0) continue;
+        owner[k] = o;
+        cells[o].push(k);
+        changed = true;
+        break;
+      }
+    }
+  }
 
   // 5. Smooth. Leftover filling leaves one-cell spurs and notches — a 0.3 m
   // tongue of living room poking between two bedrooms. A cell that touches its
@@ -586,7 +640,7 @@ export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: 
     moved = false;
     for (let k = 0; k < owner.length; k++) {
       const o = owner[k];
-      if (o === hall || cells[o].length <= 1) continue;
+      if (o < 0 || o === hall || fixed[o] || cells[o].length <= 1) continue;
       const c = k % cols;
       const r = Math.floor(k / cols);
       let own = 0;
@@ -597,7 +651,7 @@ export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: 
         if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
         const n = owner[at(cc, rr)];
         if (n === o) own++;
-        else if (n !== hall) contacts.set(n, (contacts.get(n) ?? 0) + 1);
+        else if (n !== hall && !fixed[n]) contacts.set(n, (contacts.get(n) ?? 0) + 1);
       }
       if (own > 1) continue;
       let pick = -1;
@@ -640,7 +694,7 @@ export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: 
     }
     for (let k = 0; k < owner.length; k++) {
       const o = owner[k];
-      if (o === hall || cells[o].length <= target[o] * MIN_KEEP) continue;
+      if (o < 0 || o === hall || fixed[o] || cells[o].length <= target[o] * MIN_KEEP) continue;
       const c = k % cols;
       const r = Math.floor(k / cols);
       const h = runAt(o, c, r, 1, 0);
@@ -654,7 +708,7 @@ export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: 
         const rr = r + dr;
         if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
         const n = owner[at(cc, rr)];
-        if (n !== o && n !== hall) contacts.set(n, (contacts.get(n) ?? 0) + 1);
+        if (n !== o && n !== hall && !fixed[n]) contacts.set(n, (contacts.get(n) ?? 0) + 1);
       }
       let pick = -1;
       let most = 0;
@@ -685,7 +739,7 @@ export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: 
  * luckier.
  */
 export function refineGrid(g: GridPlan, rng: Rng, moves: number, startTemp = ANNEAL_START): void {
-  const { cols, rows, owner, cells, hall } = g;
+  const { cols, rows, owner, cells, hall, fixed } = g;
   const at = (c: number, r: number) => r * cols + c;
   let current = gridScore(g);
   // Simulated annealing: early on a worse move is sometimes kept, so the
@@ -759,7 +813,7 @@ export function refineGrid(g: GridPlan, rng: Rng, moves: number, startTemp = ANN
       if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
       const from = owner[x];
       const n = owner[at(cc, rr)];
-      if (from === hall || n === hall || n === from) continue;
+      if (from === hall || n === hall || n === from || fixed[from] || fixed[n]) continue;
       k = x;
       to = n;
       dir = [dc, dr];

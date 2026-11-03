@@ -100,7 +100,8 @@ checked through doors, not shared walls.
 
 Also done: plot orientation (road side, north arrow, entry on the road,
 front/back fixed) and an optional Vastu mode with a report panel — item 1
-below. Vastu gains are modest; see PROGRESS.md.
+below. Vastu gains are modest; see PROGRESS.md. Lock rooms and regenerate
+the rest — item 2.
 
 Dropped by the owner (03/11/2026): side-by-side options with named versions,
 and the brief-adherence report.
@@ -112,7 +113,7 @@ Focus is the generator and the design workflow, not presentation. In order:
 | # | Work | Why | Size |
 |---|---|---|---|
 | 1 ✓ | **Plot orientation and Vastu.** North arrow and road side in the brief; the entry faces the road. Optional Vastu mode as scored preferences plus a check panel: kitchen south-east, master bedroom south-west, entrance north / east / north-east, no toilet in the north-east. | Indian clients ask for it on almost every house; the generator has no notion of direction today | M |
-| 2 | **Lock rooms and regenerate the rest.** Lock (or hand-edit) rooms; Generate keeps them and lays out only the others. Grid growth starts with locked cells taken. | Today Generate throws away every hand edit; commercial tools (A-Space) work this way | M |
+| 2 ✓ | **Lock rooms and regenerate the rest.** Lock (or hand-edit) rooms; Generate keeps them and lays out only the others. Grid growth starts with locked cells taken. | Today Generate throws away every hand edit; commercial tools (A-Space) work this way | M |
 | 3 | **Indian room types.** Pooja, balcony / sit-out, car porch, wash area by the kitchen, store in the form. With sizes, adjacencies, Vastu zones and furniture. | The programme is too Western for Indian briefs | S–M |
 | 4 | **Room-connection input.** The user says which rooms must connect (master ↔ its bath, kitchen ↔ dining); the generator must honour it, and says when it cannot. | Every serious tool and method takes an adjacency graph (Finch3D graph rules, GPLAN); ours is a fixed table | M |
 | 5 | **Two storeys with a stair.** G+1 is the common Indian house. Stair from NBC (riser ≤ 190 mm, tread ≥ 250 mm for one- or two-family dwellings, width 1.0 m — 0.9 m in some sources; confirm in the code text) aligned on both floors. | Most plots built today are G+1 | L |

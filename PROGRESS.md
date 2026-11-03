@@ -399,9 +399,49 @@ living). Better Vastu needs a stronger layout core (PLAN.md item 6).
 
 Tests: 30 pass.
 
+### Lock rooms and regenerate the rest (03/11/2026)
+
+- `generate(..., layout, { locked })`: locked rooms' cells are claimed first
+  on the grid and never change hands (growth, fill, smoothing, bump peeling
+  and annealing all skip them); they also act as seeds already down. Forces
+  the grid layout. A room laid out on the same grid comes back exactly; one
+  whose walls were dragged off the grid snaps to the nearest cells. A pocket
+  walled in by locked rooms and the outside goes to the locked room beside it
+  (found as a crash: an unowned cell reached the smoothing pass).
+- `Plan.locked` holds the ids, so locks survive undo and save/load.
+- UI: click a room's floor to select it, L or the button to lock; locked
+  rooms show a padlock. "Regenerate rest" lays out the unlocked rooms again
+  as one undoable edit, trying up to three seeds for a clean plan. Locked
+  rooms keep their furniture unless a new door swing hits it.
+
+2BHK east-facing, base seed 7, regenerated with seeds 8–13 (preview settings):
+
+```
+locked              valid   locked rooms exact   time
+kitchen             5/6          6/6             8.4 s
+bedroom             4/6          6/6             6.6 s
+kitchen + bath      1/6          6/6             8.7 s
+living + bedroom    6/6          6/6             4.0 s
+```
+
+Owner report: "only the locked room gets regenerated". The engine kept the
+locked shape on the grid, but a locked room dragged off the grid came back
+snapped, and its doors were re-placed, so its furniture was re-placed too —
+the locked room looked new. `restoreLocked` (edit.ts) now moves snapped walls
+back with `moveWall`, returns the locked rooms' doors (same neighbour) and
+windows where their walls still hold them, and the furniture stays: the UI
+check went from 1 of 3 locked-room pieces kept to 3 of 3.
+
+Locking a bath and the kitchen is hard: the bath was en suite to a bedroom
+that now moves, and the kitchen boxes in the middle. The UI's three tries
+help; a stronger core (item 6) is the real fix.
+
+Tests: 32 pass.
+
 ## Next task
 
-Item 2 in PLAN.md: lock rooms and regenerate the rest.
+Item 3 in PLAN.md: Indian room types (pooja, balcony / sit-out, car porch,
+wash area, store).
 
 ## How to run
 

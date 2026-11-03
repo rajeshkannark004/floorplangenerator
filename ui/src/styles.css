@@ -519,3 +519,27 @@ button.link {
 .field select {
   width: 100%;
 }
+
+.overlay .room.selected rect.hit {
+  fill: rgba(47, 111, 79, 0.06);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.overlay .room.locked rect.hit {
+  fill: rgba(47, 111, 79, 0.05);
+}
+
+.overlay .lock-badge rect {
+  fill: var(--accent);
+}
+
+.overlay .lock-badge path {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+
+.overlay .lock-badge {
+  pointer-events: none;
+}

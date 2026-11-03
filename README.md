@@ -61,6 +61,8 @@ and layout; press Generate. The plan is then editable:
 - select a wall to type the room size either side; select a door or window to
   type its width
 - Re-furnish: each click shows the next good furniture arrangement
+- click a room's floor and press L to lock it; "Regenerate rest" lays out the
+  other rooms again around the locked ones (undoable)
 - Undo / Redo (Ctrl+Z / Ctrl+Y), Save / Load as JSON
 - export DXF (millimetres, for AutoCAD and other CAD tools), SVG, or print to
   scale (1:50 / 1:100 / 1:200) and save as PDF

@@ -21,7 +21,7 @@ import {
 const SNAP = 0.05;
 const snap = (v: number) => Math.round(v / SNAP) * SNAP;
 
-type Kind = 'furniture' | 'door' | 'window' | 'wall';
+type Kind = 'furniture' | 'door' | 'window' | 'wall' | 'room';
 export type Selection = { kind: Kind; i: number } | null;
 
 type Pt = { x: number; y: number };
@@ -120,6 +120,7 @@ export default function Editor({ plan, brief, onCommit }: Props) {
       sel.kind === 'furniture' ? (plan.furniture ?? []).length :
       sel.kind === 'door' ? plan.doors.length :
       sel.kind === 'window' ? plan.windows.length :
+      sel.kind === 'room' ? plan.rooms.length :
       wallLines(plan.walls).length;
     if (sel.i >= n) setSel(null);
   }, [plan, sel]);
@@ -201,8 +202,15 @@ export default function Editor({ plan, brief, onCommit }: Props) {
   const rotate = () => {
     if (sel?.kind === 'furniture') onCommit(rotateFurniture(plan, sel.i, t));
   };
+  /** Lock or unlock the selected room; "Regenerate rest" keeps locked rooms. */
+  const toggleLock = () => {
+    if (sel?.kind !== 'room' || !plan.rooms[sel.i]) return;
+    const id = plan.rooms[sel.i].id;
+    const was = plan.locked ?? [];
+    onCommit({ ...plan, locked: was.includes(id) ? was.filter((x) => x !== id) : [...was, id] });
+  };
   const remove = () => {
-    if (!sel || sel.kind === 'wall') return;
+    if (!sel || sel.kind === 'wall' || sel.kind === 'room') return;
     const key = sel.kind === 'furniture' ? 'furniture' : sel.kind === 'door' ? 'doors' : 'windows';
     onCommit(removeAt(plan, key, sel.i));
     setSel(null);
@@ -214,6 +222,7 @@ export default function Editor({ plan, brief, onCommit }: Props) {
       if (e.key === 'Escape') setSel(null);
       else if (e.key === 'Delete' || e.key === 'Backspace') remove();
       else if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey) rotate();
+      else if ((e.key === 'l' || e.key === 'L') && !e.ctrlKey && !e.metaKey) toggleLock();
       else return;
       e.preventDefault();
     };
@@ -260,7 +269,9 @@ export default function Editor({ plan, brief, onCommit }: Props) {
     !sel ? null :
     sel.kind === 'furniture' ? shown.furniture?.[sel.i]?.kind :
     sel.kind === 'door' ? (shown.doors[sel.i]?.entry ? 'entry door' : 'door') :
+    sel.kind === 'room' ? shown.rooms[sel.i]?.id.replace(/-(\d+)$/, ' $1') :
     sel.kind;
+  const locked = new Set(shown.locked ?? []);
 
   return (
     <div className="editor">
@@ -275,6 +286,28 @@ export default function Editor({ plan, brief, onCommit }: Props) {
           onPointerCancel={onUp}
           onPointerDown={() => setSel(null)}
         >
+          {/* Rooms: the floor itself, under everything else, so a click on open floor selects the room. */}
+          {shown.rooms.map((r, i) => (
+            <g key={`room-${r.id}`} className={`room ${locked.has(r.id) ? 'locked' : ''} ${isSel('room', i) ? 'selected' : ''}`}>
+              {partsOf(r).map((p, k) => (
+                <rect
+                  key={k}
+                  className="hit room"
+                  x={px(p.x)} y={py(p.y)} width={p.w * scale} height={p.h * scale}
+                  onPointerDown={(e) => { e.stopPropagation(); setSel({ kind: 'room', i }); }}
+                />
+              ))}
+            </g>
+          ))}
+          {shown.rooms.filter((r) => locked.has(r.id)).map((r) => {
+            const p = partsOf(r).reduce((a, b) => (b.w * b.h > a.w * a.h ? b : a));
+            return (
+              <g key={`lock-${r.id}`} className="lock-badge" transform={`translate(${(px(p.x) + 14).toFixed(1)} ${(py(p.y) + 14).toFixed(1)})`}>
+                <rect x={-5} y={-1} width={10} height={8} rx={1.5} />
+                <path d="M -3 -1 V -4 A 3 3 0 0 1 3 -4 V -1" fill="none" />
+              </g>
+            );
+          })}
           {lines.map((l, i) => (
             <line
               key={`wall-${i}`}
@@ -321,10 +354,15 @@ export default function Editor({ plan, brief, onCommit }: Props) {
               <span className="muted">{plan.furniture[sel.i].len.toFixed(2)} × {plan.furniture[sel.i].depth.toFixed(2)} m</span>
             ) : null}
             {sel.kind === 'furniture' ? <button type="button" onClick={rotate}>Rotate (R)</button> : null}
-            {sel.kind !== 'wall' ? <button type="button" onClick={remove}>Delete (Del)</button> : null}
+            {sel.kind === 'room' && plan.rooms[sel.i] ? (
+              <button type="button" onClick={toggleLock}>
+                {(plan.locked ?? []).includes(plan.rooms[sel.i].id) ? 'Unlock (L)' : 'Lock (L)'}
+              </button>
+            ) : null}
+            {sel.kind !== 'wall' && sel.kind !== 'room' ? <button type="button" onClick={remove}>Delete (Del)</button> : null}
           </>
         ) : (
-          <span className="muted">Drag furniture, doors, windows or walls. Drag a door or window's end dots to resize it.</span>
+          <span className="muted">Drag furniture, doors, windows or walls. Click a room's floor to lock it, then Regenerate rest.</span>
         )}
       </div>
     </div>
