@@ -8,6 +8,9 @@ import { validate } from '../engine/src/validate.js';
 import { sameLine, extent } from '../engine/src/windows.js';
 import { segLen } from '../engine/src/walls.js';
 import { partsOf, minWidth } from '../engine/src/shape.js';
+import { placeFurniture, inDoorSwing } from '../engine/src/furniture.js';
+import { setDoor, setWindow, moveWall, wallLines, openingRange, rotateFurniture, MIN_PART } from '../engine/src/edit.js';
+import { roomArea } from '../engine/src/shape.js';
 
 const demo: Brief = {
   plot: { w: 10, d: 15 },
@@ -236,4 +239,56 @@ test('minWidth reads an L by its thinner arm', () => {
     parts: [{ x: 0, y: 0, w: 4, h: 1 }, { x: 0, y: 1, w: 1.5, h: 3 }],
   };
   assert.ok(Math.abs(minWidth(room) - 1) < 1e-9, `got ${minWidth(room)}`);
+});
+
+test('furniture stays inside its room, off door swings and off other pieces', () => {
+  const items = placeFurniture(plan, demo.wallThickness);
+  assert.ok(items.some((f) => f.kind === 'bed'), 'a bedroom gets a bed');
+  assert.ok(items.some((f) => f.kind === 'wc'), 'a bath gets a WC');
+  const hit = (a: Rect, b: Rect) => a.x < b.x + b.w - 1e-9 && b.x < a.x + a.w - 1e-9 && a.y < b.y + b.h - 1e-9 && b.y < a.y + a.h - 1e-9;
+  for (const f of items) {
+    const room = plan.rooms.find((r) => r.id === f.roomId)!;
+    assert.ok(partsOf(room).some((p) => f.rect.x >= p.x && f.rect.y >= p.y && f.rect.x + f.rect.w <= p.x + p.w + 1e-9 && f.rect.y + f.rect.h <= p.y + p.h + 1e-9), `${f.kind} inside ${room.id}`);
+    for (const d of plan.doors) assert.ok(!inDoorSwing(f.rect, d), `${f.kind} clear of door ${d.a}`);
+    for (const g of items) if (g !== f) assert.ok(!hit(f.rect, g.rect), `${f.kind} clear of ${g.kind}`);
+  }
+  assert.deepEqual(placeFurniture(plan, demo.wallThickness), items, 'same plan, same furniture');
+});
+
+test('a dragged door stays on the wall its two rooms share', () => {
+  const i = plan.doors.findIndex((d) => !d.entry);
+  const [lo] = openingRange(plan.doors[i]);
+  const moved = setDoor(plan, i, lo + 50, lo + 50.9).doors[i];
+  const a = plan.rooms.find((r) => r.id === moved.a)!;
+  const b = plan.rooms.find((r) => r.id === moved.b)!;
+  const [mlo, mhi] = openingRange(moved);
+  assert.ok(Math.abs(mhi - mlo - 0.9) < 1e-6, 'width kept');
+  const host = [...partsOf(a), ...partsOf(b)];
+  assert.ok(host.length && mlo >= 0 && mhi <= Math.max(plan.footprint.w, plan.footprint.h), 'still on the plan');
+  const w = setWindow(plan, 0, -10, 20).windows[0];
+  const [wlo, whi] = openingRange(w);
+  assert.ok(whi - wlo >= 0.4 && wlo >= 0, 'window clamped into its wall');
+});
+
+test('dragging a wall keeps the rooms tiling the footprint', () => {
+  const total = plan.rooms.reduce((s, r) => s + roomArea(r), 0);
+  let moved = 0;
+  for (const line of wallLines(plan.walls)) {
+    const next = moveWall(plan, line, line.at + 0.3) ?? moveWall(plan, line, line.at - 0.3);
+    if (!next) continue;
+    moved++;
+    assert.ok(Math.abs(next.rooms.reduce((s, r) => s + roomArea(r), 0) - total) < 1e-6, 'area conserved');
+    for (const r of next.rooms) for (const p of partsOf(r)) assert.ok(p.w >= MIN_PART - 1e-9 && p.h >= MIN_PART - 1e-9);
+  }
+  assert.ok(moved > 0, 'some wall could move');
+  const line = wallLines(plan.walls)[0];
+  assert.equal(moveWall(plan, line, line.at + 100), null, 'a room cannot be squeezed out');
+});
+
+test('rotating a piece four times brings it back', () => {
+  let p = { ...plan, furniture: placeFurniture(plan, demo.wallThickness) };
+  const i = p.furniture.findIndex((f) => f.kind === 'wc');
+  const before = p.furniture[i];
+  for (let k = 0; k < 4; k++) p = { ...rotateFurniture(p, i, demo.wallThickness), furniture: rotateFurniture(p, i, demo.wallThickness).furniture! };
+  assert.equal(p.furniture[i].facing, before.facing);
 });

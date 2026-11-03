@@ -4,6 +4,7 @@ import type { WindowSeg } from './windows.js';
 import type { DoorSeg } from './doors.js';
 import type { Rect } from './geometry.js';
 import { partsOf, labelPoint, roomArea } from './shape.js';
+import { type Furniture, placeFurniture, furnitureSVG } from './furniture.js';
 
 export interface Plan {
   rooms: Room[];
@@ -13,6 +14,8 @@ export interface Plan {
   footprint: { x: number; y: number; w: number; h: number };
   score: number;
   seed: number;
+  /** Placed furniture. When absent, `renderSVG` places it on the fly; the editor stores it so edits stick. */
+  furniture?: Furniture[];
   /** Set when the brief cannot be built at all; the plan is then not a plan. */
   infeasible?: string;
 }
@@ -40,18 +43,25 @@ function swingPath(cx: number, cy: number, rad: number, a0: number, a1: number, 
 }
 
 
-export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): string {
+/** Where plan metres land on the page. Shared with the editor so its handles sit on the drawing. */
+export function sheetFrame(brief: Brief, scale = 46, margin = 60) {
+  const ox = margin + brief.setbacks.left * scale;
+  const oy = margin + brief.setbacks.back * scale;
+  return {
+    W: brief.plot.w * scale + margin * 2,
+    H: brief.plot.d * scale + margin * 2,
+    scale,
+    px: (x: number) => ox + x * scale,
+    py: (y: number) => oy + y * scale,
+  };
+}
+
+export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60, furnish = true): string {
   const fp = plan.footprint;
   const plotW = brief.plot.w;
   const plotD = brief.plot.d;
-  const W = plotW * scale + margin * 2;
-  const H = plotD * scale + margin * 2;
-  const ox = margin + brief.setbacks.left * scale;
-  const oy = margin + brief.setbacks.back * scale;
+  const { W, H, px, py } = sheetFrame(brief, scale, margin);
   const t = brief.wallThickness * scale;
-
-  const px = (x: number) => ox + x * scale;
-  const py = (y: number) => oy + y * scale;
 
   const parts: string[] = [];
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W.toFixed(0)}" height="${H.toFixed(0)}" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" font-family="Helvetica, Arial, sans-serif">`);
@@ -65,6 +75,11 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): st
     for (const p of partsOf(r)) {
       parts.push(`<rect x="${px(p.x).toFixed(1)}" y="${py(p.y).toFixed(1)}" width="${(p.w * scale).toFixed(1)}" height="${(p.h * scale).toFixed(1)}" fill="${COLORS[r.type] ?? '#f4f4f4'}" stroke="${COLORS[r.type] ?? '#f4f4f4'}" stroke-width="0.6"/>`);
     }
+  }
+
+  // furniture, under the walls so a piece never reads as sitting on one
+  if (furnish) {
+    for (const f of plan.furniture ?? placeFurniture(plan, brief.wallThickness)) parts.push(furnitureSVG(f, px, py, scale));
   }
 
   // walls
@@ -156,8 +171,8 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60): st
     const cy = py(at.y);
     const name = r.type.charAt(0).toUpperCase() + r.type.slice(1);
     const size = partsOf(r).length > 1 ? `${roomArea(r).toFixed(1)} m²` : `${r.rect.w.toFixed(1)}×${r.rect.h.toFixed(1)} m`;
-    parts.push(`<text x="${cx.toFixed(1)}" y="${(cy - 2).toFixed(1)}" text-anchor="middle" font-size="11" fill="#23272b">${esc(name)}</text>`);
-    parts.push(`<text x="${cx.toFixed(1)}" y="${(cy + 11).toFixed(1)}" text-anchor="middle" font-size="9" fill="#6b7280">${size}</text>`);
+    parts.push(`<text x="${cx.toFixed(1)}" y="${(cy - 2).toFixed(1)}" text-anchor="middle" font-size="11" fill="#23272b" stroke="#ffffff" stroke-width="3" paint-order="stroke">${esc(name)}</text>`);
+    parts.push(`<text x="${cx.toFixed(1)}" y="${(cy + 11).toFixed(1)}" text-anchor="middle" font-size="9" fill="#6b7280" stroke="#ffffff" stroke-width="3" paint-order="stroke">${size}</text>`);
   }
 
   // title block

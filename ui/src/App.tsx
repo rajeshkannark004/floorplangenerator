@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULTS,
   generate,
-  renderSVG,
+  placeFurniture,
   validate,
+  furnitureClashes,
   type Brief,
   type Layout,
+  type Plan,
   type RoomSpec,
 } from '../../engine/src/index.js';
+import Editor from './Editor.js';
 
 interface FormState {
   plotW: number;
@@ -66,12 +69,18 @@ function toBrief(f: FormState): Brief {
 }
 
 interface Stats {
-  rooms: number;
-  doors: number;
-  windows: number;
   score: number;
   ms: number;
 }
+
+/** Every edit is a new plan; undo walks back through them. */
+interface History {
+  brief: Brief;
+  plans: Plan[];
+  at: number;
+}
+
+const SAVE_VERSION = 1;
 
 function Num({
   label,
@@ -113,8 +122,7 @@ function Num({
 
 export default function App() {
   const [form, setForm] = useState<FormState>(INITIAL);
-  const [svg, setSvg] = useState('');
-  const [problems, setProblems] = useState<string[]>([]);
+  const [history, setHistory] = useState<History | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,19 +150,14 @@ export default function App() {
           const t0 = performance.now();
           const plan = generate(brief, submitted.seed, submitted.attempts, PREVIEW_EFFORT, submitted.layout);
           const ms = performance.now() - t0;
-          setSvg(renderSVG(plan, brief));
-          setProblems(validate(plan.rooms, plan.walls, plan.windows, plan.footprint, brief, plan.doors));
-          setStats({
-            rooms: plan.rooms.length,
-            doors: plan.doors.length,
-            windows: plan.windows.length,
-            score: plan.score,
-            ms,
-          });
-          setError(null);
+          // Furniture is placed once and kept on the plan, so hand edits stick.
+          const furnished = plan.infeasible ? plan : { ...plan, furniture: placeFurniture(plan, brief.wallThickness) };
+          setHistory({ brief, plans: [furnished], at: 0 });
+          setStats({ score: plan.score, ms });
+          setError(plan.infeasible ?? null);
         } catch (e) {
           setError(e instanceof Error ? e.message : String(e));
-          setProblems([]);
+          setHistory(null);
           setStats(null);
         }
         setBusy(false);
@@ -169,6 +172,65 @@ export default function App() {
   }, [submitted]);
 
   const stale = submitted !== null && submitted !== form;
+
+  const plan = history ? history.plans[history.at] : null;
+  const brief = history?.brief ?? null;
+
+  const commit = useCallback((next: Plan) => {
+    setHistory((h) => (h ? { ...h, plans: [...h.plans.slice(0, h.at + 1), next], at: h.at + 1 } : h));
+  }, []);
+  const canUndo = !!history && history.at > 0;
+  const canRedo = !!history && history.at < history.plans.length - 1;
+  const undo = () => setHistory((h) => (h && h.at > 0 ? { ...h, at: h.at - 1 } : h));
+  const redo = () => setHistory((h) => (h && h.at < h.plans.length - 1 ? { ...h, at: h.at + 1 } : h));
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.target instanceof HTMLInputElement) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) undo();
+      else if (k === 'y' || (k === 'z' && e.shiftKey)) redo();
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const problems = useMemo(() => {
+    if (!plan || !brief || plan.infeasible) return [];
+    const out = validate(plan.rooms, plan.walls, plan.windows, plan.footprint, brief, plan.doors);
+    const clash = furnitureClashes(plan, brief.wallThickness).size;
+    if (clash) out.push(`${clash} piece${clash > 1 ? 's' : ''} of furniture clash (shown in red)`);
+    return out;
+  }, [plan, brief]);
+
+  const refurnish = () => {
+    if (plan && brief) commit({ ...plan, furniture: placeFurniture(plan, brief.wallThickness) });
+  };
+
+  const save = () => {
+    if (!plan || !brief) return;
+    const blob = new Blob([JSON.stringify({ version: SAVE_VERSION, brief, plan }, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `floorplan-seed${plan.seed}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const fileInput = useRef<HTMLInputElement>(null);
+  const load = async (file: File) => {
+    try {
+      const data = JSON.parse(await file.text());
+      if (data?.version !== SAVE_VERSION || !data.plan?.rooms || !data.brief?.plot) throw new Error('not a saved floor plan');
+      setHistory({ brief: data.brief, plans: [data.plan], at: 0 });
+      setStats(null);
+      setError(null);
+    } catch (e) {
+      setError(`Could not load ${file.name}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
 
   const buildable = useMemo(
     () => ({
@@ -262,9 +324,28 @@ export default function App() {
       </aside>
 
       <main className="stage">
+        <div className="toolbar">
+          <button type="button" onClick={undo} disabled={!canUndo} title="Ctrl+Z">Undo</button>
+          <button type="button" onClick={redo} disabled={!canRedo} title="Ctrl+Y">Redo</button>
+          <button type="button" onClick={refurnish} disabled={!plan || !!plan.infeasible}>Re-furnish</button>
+          <span className="spacer" />
+          <button type="button" onClick={save} disabled={!plan || !!plan.infeasible}>Save</button>
+          <button type="button" onClick={() => fileInput.current?.click()}>Load</button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) load(f);
+              e.target.value = '';
+            }}
+          />
+        </div>
         <div className={`canvas ${busy ? 'busy' : ''}`}>
-          {svg ? (
-            <div className="sheet" dangerouslySetInnerHTML={{ __html: svg }} />
+          {plan && brief && !plan.infeasible ? (
+            <Editor plan={plan} brief={brief} onCommit={commit} />
           ) : (
             <p className="muted">{error ? 'No plan' : busy ? 'Generating…' : 'Fill in the details and press Generate.'}</p>
           )}
@@ -283,10 +364,11 @@ export default function App() {
           ) : (
             <p className="ok">Validation clean</p>
           )}
-          {stats ? (
+          {plan ? (
             <p className="muted">
-              {stats.rooms} rooms · {stats.doors} doors · {stats.windows} windows · score{' '}
-              {stats.score.toFixed(2)} · {Math.round(stats.ms)} ms
+              {plan.rooms.length} rooms · {plan.doors.length} doors · {plan.windows.length} windows
+              {stats ? ` · score ${stats.score.toFixed(2)} · ${Math.round(stats.ms)} ms` : ''}
+              {history && history.at > 0 ? ` · ${history.at} edit${history.at > 1 ? 's' : ''}` : ''}
             </p>
           ) : null}
         </div>

@@ -220,3 +220,100 @@ body {
   opacity: 0.6;
   cursor: default;
 }
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.toolbar button,
+.selbar button {
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.toolbar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-height: 100%;
+}
+
+.sheet.editable {
+  position: relative;
+}
+
+.sheet.editable .overlay {
+  position: absolute;
+  inset: 8px;
+  width: calc(100% - 16px);
+  height: calc(100% - 16px);
+  touch-action: none;
+}
+
+/* Hit targets are invisible until hovered or selected. */
+.overlay .hit {
+  fill: transparent;
+  stroke: transparent;
+}
+
+.overlay rect.hit:hover,
+.overlay rect.hit.selected {
+  fill: rgba(47, 111, 79, 0.08);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.overlay rect.furniture {
+  cursor: move;
+}
+
+.overlay rect.furniture.clash {
+  fill: rgba(161, 64, 31, 0.12);
+  stroke: var(--warn);
+  stroke-width: 1.5;
+}
+
+.overlay line.hit:hover,
+.overlay line.hit.selected {
+  stroke: rgba(47, 111, 79, 0.35);
+}
+
+.overlay .handle {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.selbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  min-height: 30px;
+}
+
+.selbar .muted {
+  margin: 0;
+}

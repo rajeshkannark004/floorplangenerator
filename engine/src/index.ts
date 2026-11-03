@@ -17,6 +17,8 @@ export * from './windows.js';
 export * from './doors.js';
 export * from './score.js';
 export * from './shape.js';
+export * from './furniture.js';
+export * from './edit.js';
 export { GRID_CELL } from './grid.js';
 
 /**
