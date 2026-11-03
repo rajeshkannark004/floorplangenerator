@@ -19,6 +19,8 @@ export * from './score.js';
 export * from './shape.js';
 export * from './furniture.js';
 export * from './edit.js';
+export * from './schedule.js';
+export * from './dxf.js';
 export { GRID_CELL } from './grid.js';
 
 /**

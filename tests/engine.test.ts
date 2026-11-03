@@ -11,6 +11,9 @@ import { partsOf, minWidth } from '../engine/src/shape.js';
 import { placeFurniture, inDoorSwing } from '../engine/src/furniture.js';
 import { setDoor, setWindow, moveWall, wallLines, openingRange, rotateFurniture, MIN_PART } from '../engine/src/edit.js';
 import { roomArea } from '../engine/src/shape.js';
+import { areaSchedule, carpetArea, scheduleCSV } from '../engine/src/schedule.js';
+import { planDXF } from '../engine/src/dxf.js';
+import { dimensionChains } from '../engine/src/render-svg.js';
 
 const demo: Brief = {
   plot: { w: 10, d: 15 },
@@ -291,4 +294,39 @@ test('rotating a piece four times brings it back', () => {
   const before = p.furniture[i];
   for (let k = 0; k < 4; k++) p = { ...rotateFurniture(p, i, demo.wallThickness), furniture: rotateFurniture(p, i, demo.wallThickness).furniture! };
   assert.equal(p.furniture[i].facing, before.facing);
+});
+
+test('area schedule: carpet is the clear floor inside the walls', () => {
+  const t = demo.wallThickness;
+  const room = { ...plan.rooms[0], rect: { x: 0, y: 0, w: 4, h: 3 }, parts: undefined };
+  assert.ok(Math.abs(carpetArea(room, t) - (4 - t) * (3 - t)) < 1e-9, 'rectangle');
+  const ell = { ...room, rect: { x: 0, y: 0, w: 4, h: 4 }, parts: [{ x: 0, y: 0, w: 4, h: 2 }, { x: 0, y: 2, w: 2, h: 2 }] };
+  // L of a 4×2 bar and a 2×2 leg: clear floor is the same L shrunk by t/2 all round.
+  const expected = (4 - t) * (2 - t) + (2 - t) * 2;
+  assert.ok(Math.abs(carpetArea(ell, t) - expected) < 1e-9, 'L-shape');
+  const s = areaSchedule(plan, demo);
+  assert.equal(s.rows.length, plan.rooms.length);
+  assert.ok(s.carpet < plan.footprint.w * plan.footprint.h && s.carpet < s.builtUp);
+  assert.ok(s.coverage > 0 && s.coverage < 1 && s.efficiency > 0.7 && s.efficiency < 1);
+  assert.match(scheduleCSV(s), /^Room,/);
+});
+
+test('dimension chains add up to the footprint on every side', () => {
+  for (const c of dimensionChains(plan)) {
+    const span = c.side === 'n' || c.side === 's' ? plan.footprint.w : plan.footprint.h;
+    assert.ok(Math.abs(c.marks[0]) < 1e-9 && Math.abs(c.marks[c.marks.length - 1] - span) < 1e-9, `${c.side} chain spans the side`);
+  }
+});
+
+test('DXF export is well formed', () => {
+  const dxf = planDXF({ ...plan, furniture: placeFurniture(plan, demo.wallThickness) }, demo);
+  const lines = dxf.trimEnd().split('\r\n');
+  assert.equal(lines.length % 2, 0, 'code/value pairs');
+  for (let i = 0; i < lines.length; i += 2) assert.ok(/^\s*-?\d+$/.test(lines[i]), `group code at line ${i + 1}`);
+  const values = lines.filter((_, i) => i % 2 === 1);
+  assert.equal(values.filter((v) => v === 'SECTION').length, values.filter((v) => v === 'ENDSEC').length);
+  assert.equal(values[values.length - 1], 'EOF');
+  assert.ok(values.filter((v) => v === 'ARC').length === plan.doors.length, 'one swing per door');
+  assert.ok(values.filter((v) => v === 'LINE').length > plan.walls.length * 4);
+  assert.ok(!values.some((v) => v === 'NaN' || v.includes('NaN')), 'no NaN coordinates');
 });

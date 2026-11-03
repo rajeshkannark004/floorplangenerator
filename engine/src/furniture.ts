@@ -492,91 +492,113 @@ export function placeFurniture(
   return out;
 }
 
-const fx = (x: number) => +x.toFixed(3);
-const rectEl = (x: number, y: number, w: number, h: number, rx = 0, extra = '') =>
-  `<rect x="${fx(x)}" y="${fx(y)}" width="${fx(w)}" height="${fx(h)}"${rx ? ` rx="${fx(rx)}"` : ''}${extra}/>`;
-const line = (x1: number, y1: number, x2: number, y2: number) =>
-  `<line x1="${fx(x1)}" y1="${fx(y1)}" x2="${fx(x2)}" y2="${fx(y2)}"/>`;
-const ellipse = (cx: number, cy: number, rx: number, ry: number) =>
-  `<ellipse cx="${fx(cx)}" cy="${fx(cy)}" rx="${fx(rx)}" ry="${fx(ry)}"/>`;
-const circle = (cx: number, cy: number, r: number) => `<circle cx="${fx(cx)}" cy="${fx(cy)}" r="${fx(r)}"/>`;
+/**
+ * A symbol is a list of drawing primitives in the piece's local frame, so the
+ * SVG sheet and the DXF export draw the same thing.
+ */
+export type Prim =
+  | { t: 'rect'; x: number; y: number; w: number; h: number; rx?: number }
+  | { t: 'line'; x1: number; y1: number; x2: number; y2: number; dashed?: boolean }
+  | { t: 'circle'; cx: number; cy: number; r: number }
+  | { t: 'ellipse'; cx: number; cy: number; rx: number; ry: number };
+
+const rect = (x: number, y: number, w: number, h: number, rx = 0): Prim => ({ t: 'rect', x, y, w, h, rx });
+const line = (x1: number, y1: number, x2: number, y2: number, dashed = false): Prim => ({ t: 'line', x1, y1, x2, y2, dashed });
+const ellipse = (cx: number, cy: number, rx: number, ry: number): Prim => ({ t: 'ellipse', cx, cy, rx, ry });
+const circle = (cx: number, cy: number, r: number): Prim => ({ t: 'circle', cx, cy, r });
 
 /** Chairs around a table `tw` by `th` whose top-left is at (tx, ty). */
-function chairs(tx: number, ty: number, tw: number, th: number, perSide: number, ends: boolean): string {
-  const c = 0.42, out: string[] = [];
+function chairs(tx: number, ty: number, tw: number, th: number, perSide: number, ends: boolean): Prim[] {
+  const c = 0.42, out: Prim[] = [];
   for (let i = 0; i < perSide; i++) {
     const x = tx + (tw / perSide) * (i + 0.5) - c / 2;
-    out.push(rectEl(x, ty - c + 0.08, c, c - 0.08, 0.05), rectEl(x, ty + th, c, c - 0.08, 0.05));
+    out.push(rect(x, ty - c + 0.08, c, c - 0.08, 0.05), rect(x, ty + th, c, c - 0.08, 0.05));
   }
   if (ends) {
     const y = ty + th / 2 - c / 2;
-    out.push(rectEl(tx - c + 0.08, y, c - 0.08, c, 0.05), rectEl(tx + tw, y, c - 0.08, c, 0.05));
+    out.push(rect(tx - c + 0.08, y, c - 0.08, c, 0.05), rect(tx + tw, y, c - 0.08, c, 0.05));
   }
-  return out.join('');
+  return out;
 }
 
-function bedSymbol(x: number, L: number, D: number): string {
+function bedSymbol(x: number, L: number, D: number): Prim[] {
   const two = L > 1.2;
   const pw = two ? (L - 0.3) / 2 : L - 0.2;
-  const pillows = two ? rectEl(x + 0.1, 0.1, pw, 0.4, 0.06) + rectEl(x + 0.2 + pw, 0.1, pw, 0.4, 0.06) : rectEl(x + 0.1, 0.1, pw, 0.4, 0.06);
-  return rectEl(x, 0, L, D) + pillows + line(x, 0.65, x + L, 0.65) + line(x + L * 0.55, 0.65, x + L, 0.95);
+  const pillows = two ? [rect(x + 0.1, 0.1, pw, 0.4, 0.06), rect(x + 0.2 + pw, 0.1, pw, 0.4, 0.06)] : [rect(x + 0.1, 0.1, pw, 0.4, 0.06)];
+  return [rect(x, 0, L, D), ...pillows, line(x, 0.65, x + L, 0.65), line(x + L * 0.55, 0.65, x + L, 0.95)];
 }
 
-function counter(L: number, D: number): string {
-  return rectEl(0, 0, L, D) + line(0, D - 0.05, L, D - 0.05);
-}
+const counter = (L: number, D: number): Prim[] => [rect(0, 0, L, D), line(0, D - 0.05, L, D - 0.05)];
 
 /** The symbol in its local frame: `len` along the wall, `depth` out, back edge at y = 0. */
-function symbol(kind: FurnitureKind, L: number, D: number): string {
+export function symbol(kind: FurnitureKind, L: number, D: number): Prim[] {
   switch (kind) {
     case 'bed':
       return bedSymbol(0, L, D);
     case 'bedNS':
-      return rectEl(0, 0, 0.42, 0.42, 0.03) + rectEl(L - 0.42, 0, 0.42, 0.42, 0.03) + circle(0.21, 0.21, 0.1) + circle(L - 0.21, 0.21, 0.1) + bedSymbol(0.45, L - 0.9, D);
+      return [rect(0, 0, 0.42, 0.42, 0.03), rect(L - 0.42, 0, 0.42, 0.42, 0.03), circle(0.21, 0.21, 0.1), circle(L - 0.21, 0.21, 0.1), ...bedSymbol(0.45, L - 0.9, D)];
     case 'wardrobe':
-      return rectEl(0, 0, L, D) + `<line x1="0.05" y1="${fx(D / 2)}" x2="${fx(L - 0.05)}" y2="${fx(D / 2)}" stroke-dasharray="0.08 0.05"/>` + line(L / 2, D - 0.04, L / 2, D);
+      return [rect(0, 0, L, D), line(0.05, D / 2, L - 0.05, D / 2, true), line(L / 2, D - 0.04, L / 2, D)];
     case 'desk':
-      return rectEl(0, 0, L, D) + rectEl(L / 2 - 0.22, D + 0.05, 0.44, 0.42, 0.06) + line(L / 2 - 0.18, D + 0.4, L / 2 + 0.18, D + 0.4);
+      return [rect(0, 0, L, D), rect(L / 2 - 0.22, D + 0.05, 0.44, 0.42, 0.06), line(L / 2 - 0.18, D + 0.4, L / 2 + 0.18, D + 0.4)];
     case 'wc':
-      return rectEl(0, 0, L, 0.2, 0.03) + ellipse(L / 2, 0.2 + (D - 0.2) / 2, L / 2 - 0.02, (D - 0.2) / 2) + ellipse(L / 2, 0.2 + (D - 0.2) / 2, L / 2 - 0.08, (D - 0.2) / 2 - 0.07);
+      return [rect(0, 0, L, 0.2, 0.03), ellipse(L / 2, 0.2 + (D - 0.2) / 2, L / 2 - 0.02, (D - 0.2) / 2), ellipse(L / 2, 0.2 + (D - 0.2) / 2, L / 2 - 0.08, (D - 0.2) / 2 - 0.07)];
     case 'basin':
-      return rectEl(0, 0, L, D, 0.04) + ellipse(L / 2, D / 2 + 0.02, L / 2 - 0.08, D / 2 - 0.08) + circle(L / 2, 0.08, 0.025);
+      return [rect(0, 0, L, D, 0.04), ellipse(L / 2, D / 2 + 0.02, L / 2 - 0.08, D / 2 - 0.08), circle(L / 2, 0.08, 0.025)];
     case 'shower':
-      return rectEl(0, 0, L, D) + line(0, 0, L, D) + line(L, 0, 0, D) + circle(L / 2, D / 2, 0.05);
+      return [rect(0, 0, L, D), line(0, 0, L, D), line(L, 0, 0, D), circle(L / 2, D / 2, 0.05)];
     case 'sofa':
     case 'sofaSet':
     case 'armchair': {
       const sd = kind === 'sofaSet' ? 0.9 : D;
       const arm = kind === 'armchair' ? 0.15 : 0.2, back = 0.22;
       const seats = kind === 'armchair' ? 1 : L > 1.8 ? 3 : 2, sw = (L - 2 * arm) / seats;
-      let s = rectEl(0, 0, L, sd, 0.06) + rectEl(arm, back, L - 2 * arm, sd - back);
-      for (let i = 1; i < seats; i++) s += line(arm + sw * i, back, arm + sw * i, sd);
-      if (kind === 'sofaSet') s += rectEl(L / 2 - 0.55, sd + 0.45, 1.1, D - sd - 0.45, 0.05);
+      const s = [rect(0, 0, L, sd, 0.06), rect(arm, back, L - 2 * arm, sd - back)];
+      for (let i = 1; i < seats; i++) s.push(line(arm + sw * i, back, arm + sw * i, sd));
+      if (kind === 'sofaSet') s.push(rect(L / 2 - 0.55, sd + 0.45, 1.1, D - sd - 0.45, 0.05));
       return s;
     }
     case 'tv':
-      return rectEl(0, 0, L, D) + rectEl(L * 0.15, 0.12, L * 0.7, 0.06);
+      return [rect(0, 0, L, D), rect(L * 0.15, 0.12, L * 0.7, 0.06)];
     case 'dining6':
     case 'dining4': {
       const tw = kind === 'dining6' ? 1.6 : L > 1.5 ? 1.2 : 0.9, th = 0.9;
       const tx = (L - tw) / 2, ty = (D - th) / 2;
-      return rectEl(tx, ty, tw, th, 0.04) + chairs(tx, ty, tw, th, kind === 'dining6' ? 2 : L > 1.5 ? 2 : 1, kind === 'dining6' || L <= 1.5);
+      return [rect(tx, ty, tw, th, 0.04), ...chairs(tx, ty, tw, th, kind === 'dining6' ? 2 : L > 1.5 ? 2 : 1, kind === 'dining6' || L <= 1.5)];
     }
     case 'sideboard':
-      return rectEl(0, 0, L, D) + line(L / 3, 0, L / 3, D) + line((2 * L) / 3, 0, (2 * L) / 3, D);
+      return [rect(0, 0, L, D), line(L / 3, 0, L / 3, D), line((2 * L) / 3, 0, (2 * L) / 3, D)];
     case 'sinkRun': {
       const sx = L / 2;
-      return counter(L, D) + rectEl(sx - 0.25, 0.1, 0.5, 0.38, 0.05) + circle(sx, 0.29, 0.03) + circle(sx, 0.06, 0.02);
+      return [...counter(L, D), rect(sx - 0.25, 0.1, 0.5, 0.38, 0.05), circle(sx, 0.29, 0.03), circle(sx, 0.06, 0.02)];
     }
     case 'hobRun': {
       const hx = L / 2;
-      return counter(L, D) + rectEl(hx - 0.3, 0.05, 0.6, 0.5, 0.02)
-        + [[-0.14, 0.17], [0.14, 0.17], [-0.14, 0.42], [0.14, 0.42]].map(([dx, y]) => circle(hx + dx, y, 0.08)).join('');
+      return [...counter(L, D), rect(hx - 0.3, 0.05, 0.6, 0.5, 0.02),
+        ...[[-0.14, 0.17], [0.14, 0.17], [-0.14, 0.42], [0.14, 0.42]].map(([dx, y]) => circle(hx + dx, y, 0.08))];
     }
     case 'fridge':
-      return rectEl(0, 0, L, D) + rectEl(0.06, 0.06, L - 0.12, D - 0.2, 0.02) + line(L * 0.3, D - 0.08, L * 0.7, D - 0.08);
+      return [rect(0, 0, L, D), rect(0.06, 0.06, L - 0.12, D - 0.2, 0.02), line(L * 0.3, D - 0.08, L * 0.7, D - 0.08)];
     case 'washer':
-      return rectEl(0, 0, L, D) + circle(L / 2, D / 2 + 0.03, Math.min(L, D) / 2 - 0.08) + line(0.05, 0.1, L - 0.05, 0.1);
+      return [rect(0, 0, L, D), circle(L / 2, D / 2 + 0.03, Math.min(L, D) / 2 - 0.08), line(0.05, 0.1, L - 0.05, 0.1)];
+  }
+}
+
+/** Map a point in a piece's local frame to plan metres. */
+export const furniturePoint = (f: Furniture, u: number, v: number) => toPlan(f, u, v);
+
+const fx = (x: number) => +x.toFixed(3);
+
+function primSVG(p: Prim): string {
+  switch (p.t) {
+    case 'rect':
+      return `<rect x="${fx(p.x)}" y="${fx(p.y)}" width="${fx(p.w)}" height="${fx(p.h)}"${p.rx ? ` rx="${fx(p.rx)}"` : ''}/>`;
+    case 'line':
+      return `<line x1="${fx(p.x1)}" y1="${fx(p.y1)}" x2="${fx(p.x2)}" y2="${fx(p.y2)}"${p.dashed ? ' stroke-dasharray="0.08 0.05"' : ''}/>`;
+    case 'circle':
+      return `<circle cx="${fx(p.cx)}" cy="${fx(p.cy)}" r="${fx(p.r)}"/>`;
+    case 'ellipse':
+      return `<ellipse cx="${fx(p.cx)}" cy="${fx(p.cy)}" rx="${fx(p.rx)}" ry="${fx(p.ry)}"/>`;
   }
 }
 
@@ -591,5 +613,5 @@ export function furnitureSVG(f: Furniture, px: (x: number) => number, py: (y: nu
     f.facing === 'n' ? [x + w, y + h, 180] :
     f.facing === 'e' ? [x, y + h, -90] :
     [x + w, y, 90];
-  return `<g transform="translate(${px(tx).toFixed(2)} ${py(ty).toFixed(2)}) scale(${scale}) rotate(${rot})" fill="#ffffff" stroke="#6b7280" stroke-width="${fx(0.8 / scale)}">${symbol(f.kind, f.len, f.depth)}</g>`;
+  return `<g transform="translate(${px(tx).toFixed(2)} ${py(ty).toFixed(2)}) scale(${scale}) rotate(${rot})" fill="#ffffff" stroke="#6b7280" stroke-width="${fx(0.8 / scale)}">${symbol(f.kind, f.len, f.depth).map(primSVG).join('')}</g>`;
 }

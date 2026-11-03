@@ -56,7 +56,76 @@ export function sheetFrame(brief: Brief, scale = 46, margin = 60) {
   };
 }
 
-export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60, furnish = true): string {
+/** One run of dimensions along a side of the footprint. */
+export interface DimChain {
+  side: 'n' | 's' | 'e' | 'w';
+  /** Marks along the side, in plan metres, sorted. */
+  marks: number[];
+  /** How far out from the footprint edge the line sits, metres. */
+  offset: number;
+}
+
+/**
+ * Dimension chains as a draughtsman would put them: on every side, a chain
+ * through each wall that meets that side, and an overall dimension further out
+ * on the top and left. Marks are at wall centrelines.
+ */
+export function dimensionChains(plan: Plan): DimChain[] {
+  const fp = plan.footprint;
+  const E = 1e-6;
+  const marks = (side: DimChain['side']) => {
+    const out = new Set<number>(side === 'n' || side === 's' ? [0, fp.w] : [0, fp.h]);
+    for (const r of plan.rooms) {
+      for (const p of partsOf(r)) {
+        if (side === 'n' && Math.abs(p.y) < E) { out.add(p.x); out.add(p.x + p.w); }
+        if (side === 's' && Math.abs(p.y + p.h - fp.h) < E) { out.add(p.x); out.add(p.x + p.w); }
+        if (side === 'w' && Math.abs(p.x) < E) { out.add(p.y); out.add(p.y + p.h); }
+        if (side === 'e' && Math.abs(p.x + p.w - fp.w) < E) { out.add(p.y); out.add(p.y + p.h); }
+      }
+    }
+    const sorted = [...out].sort((a, b) => a - b);
+    return sorted.filter((v, i) => i === 0 || v - sorted[i - 1] > 1e-4);
+  };
+  const chains: DimChain[] = (['n', 's', 'w', 'e'] as const).map((side) => ({ side, marks: marks(side), offset: 0.45 }));
+  chains.push({ side: 'n', marks: [0, fp.w], offset: 0.9 }, { side: 'w', marks: [0, fp.h], offset: 0.9 });
+  return chains;
+}
+
+/**
+ * Which way a door leaf swings across its wall: +1 toward +x (a vertical
+ * opening) or +y (a horizontal one), -1 the other way, 0 when neither room is
+ * known. The swing goes into the room the door serves, and the hinge sits at
+ * the low end of the opening.
+ */
+export function doorSwingSide(plan: Plan, d: DoorSeg): 1 | -1 | 0 {
+  const roomById = new Map(plan.rooms.map((r) => [r.id, r]));
+  // The part of a room the door opens into. For an L the bounding-box centre
+  // can sit on the wrong side of the door line; the part holding the door cannot.
+  const anchor = (room: Room): Rect => {
+    const mx = (d.x1 + d.x2) / 2;
+    const my = (d.y1 + d.y2) / 2;
+    return (
+      partsOf(room).find((p) => mx >= p.x - 1e-6 && mx <= p.x + p.w + 1e-6 && my >= p.y - 1e-6 && my <= p.y + p.h + 1e-6) ??
+      room.rect
+    );
+  };
+  const ra = roomById.get(d.a);
+  const rb = d.b ? roomById.get(d.b) : undefined;
+  // Swing into the room, never into the corridor. Falling back to "the
+  // smaller room" alone sent every hall door swinging back out into the hall,
+  // because the hall is smaller than the bedrooms it serves.
+  const smaller = (x: typeof ra, y: typeof rb) =>
+    !y ? x : !x ? y : x.rect.w * x.rect.h <= y.rect.w * y.rect.h ? x : y;
+  let target = ra && rb ? smaller(ra, rb) : ra ?? rb;
+  if (ra?.type === 'hall' && rb) target = rb;
+  else if (rb?.type === 'hall' && ra) target = ra;
+  if (!target) return 0;
+  const home = anchor(target);
+  if (d.axis === 'v') return home.x + home.w / 2 > d.x1 ? 1 : -1;
+  return home.y + home.h / 2 > d.y1 ? 1 : -1;
+}
+
+export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60, furnish = true, dimensions = true): string {
   const fp = plan.footprint;
   const plotW = brief.plot.w;
   const plotD = brief.plot.d;
@@ -92,38 +161,16 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60, fur
   // goes into the room the door serves, and the hinge sits at the low end of
   // the opening — swinging every leaf to +x/+y swept half of them through the
   // wall they sit in.
-  const roomById = new Map(plan.rooms.map((r) => [r.id, r]));
-  // The part of a room the door opens into. For an L the bounding-box centre
-  // can sit on the wrong side of the door line; the part holding the door cannot.
-  const anchor = (room: Room, d: DoorSeg): Rect => {
-    const mx = (d.x1 + d.x2) / 2;
-    const my = (d.y1 + d.y2) / 2;
-    return (
-      partsOf(room).find((p) => mx >= p.x - 1e-6 && mx <= p.x + p.w + 1e-6 && my >= p.y - 1e-6 && my <= p.y + p.h + 1e-6) ??
-      room.rect
-    );
-  };
   for (const d of plan.doors ?? []) {
     const rad = d.width * scale;
     const ink = d.entry ? '#7a4a1f' : '#23272b';
-    const ra = roomById.get(d.a);
-    const rb = d.b ? roomById.get(d.b) : undefined;
-    // Swing into the room, never into the corridor. Falling back to "the
-    // smaller room" alone sent every hall door swinging back out into the hall,
-    // because the hall is smaller than the bedrooms it serves.
-    const smaller = (x: typeof ra, y: typeof rb) =>
-      !y ? x : !x ? y : x.rect.w * x.rect.h <= y.rect.w * y.rect.h ? x : y;
-    let target = ra && rb ? smaller(ra, rb) : ra ?? rb;
-    if (ra?.type === 'hall' && rb) target = rb;
-    else if (rb?.type === 'hall' && ra) target = ra;
-    if (!target) continue;
+    const side = doorSwingSide(plan, d);
+    if (!side) continue;
 
     if (d.axis === 'v') {
       const x = px(d.x1);
       const yTop = py(Math.min(d.y1, d.y2));
       const yBot = py(Math.max(d.y1, d.y2));
-      const home = anchor(target, d);
-      const side = home.x + home.w / 2 > d.x1 ? 1 : -1;
       const a0 = side === 1 ? 0 : 180;
       parts.push(`<line x1="${x}" y1="${yTop}" x2="${x}" y2="${yBot}" stroke="#ffffff" stroke-width="${(t + 1).toFixed(2)}"/>`);
       parts.push(`<line x1="${x}" y1="${yTop}" x2="${(x + side * rad).toFixed(2)}" y2="${yTop}" stroke="${ink}" stroke-width="1.2"/>`);
@@ -132,8 +179,6 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60, fur
       const y = py(d.y1);
       const xL = px(Math.min(d.x1, d.x2));
       const xR = px(Math.max(d.x1, d.x2));
-      const home = anchor(target, d);
-      const side = home.y + home.h / 2 > d.y1 ? 1 : -1;
       const a0 = side === 1 ? 90 : 270;
       const a1 = side === 1 ? 0 : 360;
       parts.push(`<line x1="${xL}" y1="${y}" x2="${xR}" y2="${y}" stroke="#ffffff" stroke-width="${(t + 1).toFixed(2)}"/>`);
@@ -160,6 +205,40 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60, fur
       parts.push(`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="#ffffff" stroke-width="${(t + 1).toFixed(2)}"/>`);
       for (const d of [-t / 3, 0, t / 3]) {
         parts.push(`<line x1="${x1}" y1="${(y + d).toFixed(2)}" x2="${x2}" y2="${(y + d).toFixed(2)}" stroke="#4a7fa5" stroke-width="1.2"/>`);
+      }
+    }
+  }
+
+  // dimensions, outside the walls
+  if (dimensions && plan.rooms.length) {
+    const ink = '#8a6d3b';
+    const half = brief.wallThickness / 2;
+    const tick = 4;
+    for (const c of dimensionChains(plan)) {
+      const out = half + c.offset;
+      const horizontal = c.side === 'n' || c.side === 's';
+      // Position of the dimension line across the side, in plan metres.
+      const at = c.side === 'n' ? -out : c.side === 's' ? fp.h + out : c.side === 'w' ? -out : fp.w + out;
+      const P = (along: number, across: number) => (horizontal ? [px(along), py(across)] : [px(across), py(along)]);
+      const [ax, ay] = P(c.marks[0], at);
+      const [bx, by] = P(c.marks[c.marks.length - 1], at);
+      parts.push(`<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${ink}" stroke-width="0.7"/>`);
+      const face = c.side === 'n' ? -half : c.side === 's' ? fp.h + half : c.side === 'w' ? -half : fp.w + half;
+      for (const m of c.marks) {
+        const [x, y] = P(m, at);
+        const [fx0, fy0] = P(m, face + (at > face ? 0.08 : -0.08));
+        const [fx1, fy1] = P(m, at + (at > face ? 0.08 : -0.08));
+        parts.push(`<line x1="${fx0.toFixed(1)}" y1="${fy0.toFixed(1)}" x2="${fx1.toFixed(1)}" y2="${fy1.toFixed(1)}" stroke="${ink}" stroke-width="0.4"/>`);
+        parts.push(`<line x1="${(x - tick).toFixed(1)}" y1="${(y + tick).toFixed(1)}" x2="${(x + tick).toFixed(1)}" y2="${(y - tick).toFixed(1)}" stroke="${ink}" stroke-width="1"/>`);
+      }
+      for (let i = 1; i < c.marks.length; i++) {
+        const len = c.marks[i] - c.marks[i - 1];
+        if (len * scale < 18) continue;
+        const [x, y] = P((c.marks[i] + c.marks[i - 1]) / 2, at);
+        const label = len.toFixed(2);
+        parts.push(horizontal
+          ? `<text x="${x.toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-size="9" fill="${ink}">${label}</text>`
+          : `<text x="${(x - 3).toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-size="9" fill="${ink}" transform="rotate(-90 ${(x - 3).toFixed(1)} ${y.toFixed(1)})">${label}</text>`);
       }
     }
   }

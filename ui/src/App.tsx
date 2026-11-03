@@ -5,12 +5,18 @@ import {
   placeFurniture,
   validate,
   furnitureClashes,
+  areaSchedule,
+  scheduleCSV,
+  planDXF,
+  renderSVG,
   type Brief,
   type Layout,
   type Plan,
   type RoomSpec,
 } from '../../engine/src/index.js';
 import Editor from './Editor.js';
+import ScheduleTable from './Schedule.js';
+import { download, printAtScale } from './exports.js';
 
 interface FormState {
   plotW: number;
@@ -209,14 +215,26 @@ export default function App() {
     if (plan && brief) commit({ ...plan, furniture: placeFurniture(plan, brief.wallThickness) });
   };
 
+  const schedule = useMemo(() => (plan && brief && !plan.infeasible ? areaSchedule(plan, brief) : null), [plan, brief]);
+  const [printScale, setPrintScale] = useState(100);
+  const name = plan ? `floorplan-seed${plan.seed}` : 'floorplan';
+
   const save = () => {
+    if (plan && brief) download(`${name}.json`, JSON.stringify({ version: SAVE_VERSION, brief, plan }, null, 1), 'application/json');
+  };
+  const exportDXF = () => {
+    if (plan && brief) download(`${name}.dxf`, planDXF(plan, brief), 'application/dxf');
+  };
+  const exportSVG = () => {
+    if (plan && brief) download(`${name}.svg`, renderSVG(plan, brief), 'image/svg+xml');
+  };
+  const exportCSV = () => {
+    if (schedule) download(`${name}-areas.csv`, '﻿' + scheduleCSV(schedule), 'text/csv');
+  };
+  const exportPDF = () => {
     if (!plan || !brief) return;
-    const blob = new Blob([JSON.stringify({ version: SAVE_VERSION, brief, plan }, null, 1)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `floorplan-seed${plan.seed}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const problem = printAtScale(plan, brief, printScale);
+    if (problem) setError(problem);
   };
 
   const fileInput = useRef<HTMLInputElement>(null);
@@ -329,6 +347,17 @@ export default function App() {
           <button type="button" onClick={redo} disabled={!canRedo} title="Ctrl+Y">Redo</button>
           <button type="button" onClick={refurnish} disabled={!plan || !!plan.infeasible}>Re-furnish</button>
           <span className="spacer" />
+          <span className="group">
+            <select value={printScale} onChange={(e) => setPrintScale(Number(e.target.value))} title="Print scale">
+              <option value={50}>1:50</option>
+              <option value={100}>1:100</option>
+              <option value={200}>1:200</option>
+            </select>
+            <button type="button" onClick={exportPDF} disabled={!schedule} title="Print to scale; choose Save as PDF">PDF</button>
+          </span>
+          <button type="button" onClick={exportDXF} disabled={!schedule} title="AutoCAD R12 DXF, millimetres">DXF</button>
+          <button type="button" onClick={exportSVG} disabled={!schedule}>SVG</button>
+          <span className="sep" />
           <button type="button" onClick={save} disabled={!plan || !!plan.infeasible}>Save</button>
           <button type="button" onClick={() => fileInput.current?.click()}>Load</button>
           <input
@@ -371,6 +400,7 @@ export default function App() {
               {history && history.at > 0 ? ` · ${history.at} edit${history.at > 1 ? 's' : ''}` : ''}
             </p>
           ) : null}
+          {schedule ? <ScheduleTable s={schedule} onCSV={exportCSV} /> : null}
         </div>
       </main>
     </div>

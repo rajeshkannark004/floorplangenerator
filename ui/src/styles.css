@@ -317,3 +317,90 @@ body {
 .selbar .muted {
   margin: 0;
 }
+
+.toolbar select {
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  background: #fff;
+}
+
+.toolbar .group {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.toolbar .sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+  margin: 0 4px;
+}
+
+.status {
+  max-height: 42vh;
+  overflow-y: auto;
+}
+
+.schedule summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.schedule table {
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule th,
+.schedule td {
+  padding: 3px 14px 3px 0;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+}
+
+.schedule th:first-child,
+.schedule td:first-child {
+  text-align: left;
+}
+
+.schedule th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.schedule tfoot td {
+  font-weight: 600;
+  border-bottom: none;
+}
+
+button.link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.metres {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.metres input {
+  width: 72px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+}
