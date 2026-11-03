@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 02/11/2026
+Last updated: 03/11/2026
 
 ## Where things stand
 
@@ -259,7 +259,57 @@ Still wrong with grid: 3BHK (missing windows, bedrooms off circulation) and
 narrow (bedrooms unreachable); about 2x slower than split; the hall is still a
 full-width strip.
 
+## 03/11/2026
+
+### Furniture
+
+- **v1**: wall-backed pieces placed greedily. Worked, but read as average and
+  ignored the room.
+- **v2** (`furniture.ts`): researched clearances and layout rules first, then a
+  per-room beam search (12 partial layouts per piece) with hard and soft clear
+  zones, room rules (bed head off the door wall; WC and basin on one wet wall,
+  shower in a corner; L-shaped counter and work triangle; TV facing the sofa)
+  and a walkway check from the door. Size variants scale pieces to the room.
+- Door swings tested as a quarter disc instead of the bounding square. That
+  freed the latch-side corner, and both 2.5×1.7 m baths in the demo went from
+  WC + basin to shower + WC + basin.
+- New symbols: bedside tables, desk, TV unit, armchair, sideboard, sink and
+  hob counter runs.
+- Known: the sofa can end up backing onto a window; the dining table can sit
+  off-centre when a door swing takes the middle.
+
+### Editor
+
+- `edit.ts`: pure edit ops (doors and windows slide and resize on their host
+  wall; interior wall lines move every room edge on them; furniture move,
+  rotate, delete; clash detection). `Plan.furniture` stores furniture so edits
+  stick; `sheetFrame` shares the page transform with the UI.
+- `ui/src/Editor.tsx`: overlay of hit targets on the engine SVG; drag, end
+  handles, keyboard (R, Del, Esc). `App.tsx`: undo history, Re-furnish,
+  Save/Load JSON, validation on every edit.
+- Bug found while driving the UI: grid L-rooms can have legs thinner than the
+  0.9 m wall-drag minimum, so walls next to them refused to move. Now only a
+  leg the drag narrows is held to the minimum.
+- Checked in headless Edge over CDP: furniture drag and rotate, door slide and
+  resize, window slide, wall drag, then undo back to a clean plan.
+
+Tests: 22 pass (4 new: furniture placement, door kept on its shared wall,
+wall drag conserves area and refuses to collapse a room, rotation round trip).
+Demo (seed 7, 120 attempts, effort 0.5) still validates clean, ~5.4 s.
+
+### Direction
+
+Researched architects' pain points; the list and order are in PLAN.md,
+*Architect pain points*. Compliance will follow **Indian norms** (NBC 2016,
+then state bye-laws).
+
 ## Next task
+
+Pain points, quick wins first: room area schedule (carpet / built-up, CSV),
+live dimension lines with typed sizes, DXF and scaled PDF export. Then the
+Indian-norms compliance panel. The grid work below is still open.
+
+### Earlier next task (02/11/2026)
 
 Grid: 3BHK and narrow, then step B (zones first, hall only where it joins
 zones). The UI defaults to grid; the CLI and harness default to split.

@@ -10,8 +10,12 @@ interior/exterior walls, windows on exterior walls, one straight circulation hal
 spanning the buildable width, interior doors and an entry door, SVG output, a
 browser UI with a live preview.
 
+Also in (since 03/11/2026): furniture, and hand editing of the generated plan
+(furniture, doors, windows, interior walls) with undo and JSON save/load.
+
 Not in (for now): L-shaped or irregular plots, corridors that turn or branch,
-staircases, furniture, 3D, PDF/DXF export, any server-side component.
+staircases, 3D, any server-side component. PDF/DXF export is now planned; see
+*Architect pain points*.
 
 ## Architecture
 
@@ -30,6 +34,8 @@ engine/src/walls.ts       interior walls from shared edges, exterior from leftov
 engine/src/windows.ts     window placement on exterior walls, clear of doors
 engine/src/doors.ts       bath roles, door pairs, openings, door reachability
 engine/src/validate.ts    rule checks, returns a list of violations
+engine/src/furniture.ts   furniture placement (beam search) and symbols
+engine/src/edit.ts        pure edit operations used by the UI editor
 engine/src/render-svg.ts  Plan -> SVG string
 engine/src/index.ts       generate(brief, seed, attempts, effort)
 demo.ts                   CLI: writes out/plan.svg
@@ -122,8 +128,10 @@ turn or branch, that is a partitioner change, not a door change.
 | 6 | Doors + circulation | Allowed pairs, one door per room, bath roles, hall spine, doors clear of windows |
 | 7 | React UI | Form + live preview, engine imported directly |
 | 8 | Export + presets | SVG/JSON download, 1BHK/2BHK/3BHK presets, seed control |
+| 9 | Furniture | Every room type furnished, clear of door swings, reachable from the door |
+| 10 | Editor | Drag furniture, openings and walls; undo; save/load |
 
-Stages 0–7 are done. Stage 8 is the remaining feature work, but it is blocked
+Stages 0–7, 9 and 10 are done; stage 8 has JSON save/load only. Stage 8 is the remaining feature work, but it is blocked
 behind the audit plan below — the engine only works reliably on the demo brief.
 The layout step itself is being replaced; see *Next direction* below.
 
@@ -199,6 +207,53 @@ What this changes downstream:
   speed; start at 0.3 m and measure.
 - Determinism still holds: every random choice comes from the seeded rng.
 
+## Architect pain points (researched 03/11/2026)
+
+From here on the work targets what slows architects down on a floor plan.
+Caveat: no primary survey of architects turned up; the sources are vendor
+blogs, academic reviews and contract samples, so read them as directional.
+
+| # | Pain point | What we build | Size |
+|---|---|---|---|
+| 1 | A small change means redrawing (a moved wall ripples through the drawing); clients reject the first draft and each revision round costs hours | Partly solved by the editor. Next: live dimension lines, typed exact sizes | S |
+| 2 | Revision loops and client indecision; contracts cap revisions at 2–3 | Several options side by side, compare, named versions | M |
+| 3 | Code and zoning checks by hand; AI generators ignore codes | Live compliance panel against **Indian norms**: NBC 2016 room sizes and heights, light and ventilation (window area vs floor area), setbacks, ground coverage, FAR, as switchable rule packs per state bye-law | M–L |
+| 4 | AI output is not editable or is raster, so it is redrawn in CAD | DXF export (AutoCAD and other CAD tools) and a scaled PDF (1:50 / 1:100); our output is already vector | S–M |
+| 5 | Area schedules (carpet / built-up) done by hand | Automatic room schedule and totals, CSV export | S |
+| 6 | Plumbing, electrical and structure ignored | Stack wet rooms, column grid, flag fixtures far from a wet wall | M |
+| 7 | Generators skip parts of the brief or invent rooms | Brief-adherence report: asked vs delivered, and why | S |
+| 8 | Professional tools are expensive or overkill for small practices | Free and in the browser already | — |
+
+Order: quick wins first — 5, 1, 4 — then 3, then 2, then 6 and 7.
+
+The rule pack values for 3 must come from the code text (NBC 2016 Part 3 and
+Part 8, and the state bye-law in use), not from secondary sources; each rule
+carries its clause reference.
+
+Sources: [Snaptrude, AI house plan generators](https://www.snaptrude.com/blog/ai-house-plan-generators-2025);
+[Snaptrude, residential software](https://www.snaptrude.com/blog/best-residential-architecture-software-2026);
+[DesignDrafter buyer's guide](https://designdrafter.com/how-to-choose-architecture-design-software-for-architects/);
+[DesignDrafter, AI generators](https://designdrafter.com/how-ai-floor-plan-generators-are-revolutionizing-architectural-design-in-2026/);
+[ArchPulse](https://www.archpulse.co/blog/ai-floor-plan-generator);
+[Meltplan](https://www.meltplan.com/blogs/best-ai-to-generate-floor-plans);
+[TECT, schematic design](https://www.tect.com/feeds/blog/luxury-home-schematic-design-architect);
+[Law Insider, design clauses](https://www.lawinsider.com/clause/architectural-design);
+[CHI 2025 GenAI floor-planning survey](https://generativeaiandhci.github.io/papers/2025/genaichi2025_6.pdf);
+[comparative study of AI floor plan generators](https://www.researchgate.net/publication/404157015_Comparative_Analysis_of_AI-Based_Floor_Plan_Generators_in_Architectural_Design_Process);
+[Gen-AI in building research, review](https://arxiv.org/pdf/2410.01098);
+[Vizcraft](https://vizcraft.ai/blog/posts/ai-floor-plan-generator-guide-architects);
+[AI tools architects should not trust blindly](https://www.amanzadegan.com/ai-tools-architects-should-not-trust-blindly/);
+[Kispo](https://www.kispo.ai/blog/ai-floor-plan-generator-architects-guide);
+[Homestyler](https://www.homestyler.com/article/trends/ai-floor-plan-generators-explained).
+
+Furniture research (03/11/2026): clearances from
+[Homes & Gardens](https://www.homesandgardens.com/interior-design/bedrooms/an-expert-guide-to-bedroom-clearances-measurements-and-spacing),
+[Arcedior](https://arcedior.com/blog/chair-clearance-behind-dining-tables),
+[Houzz](https://www.houzz.com.sg/ideabooks/109239110),
+[kitchen work triangle (NKBA)](https://en.wikipedia.org/wiki/Kitchen_work_triangle);
+search-and-score layout after
+[Automatic Generation of Constrained Furniture Layouts](https://arxiv.org/pdf/1711.10939).
+
 ## Open decisions
 
 - **Performance.** 120 attempts at effort 0.5 takes about 15 s; full effort at
@@ -221,8 +276,12 @@ What this changes downstream:
 - Room defaults in `brief.ts` and the allowed-pair table are plausible starting
   values, **not** verified building norms. Check against the applicable local
   rules before trusting them.
-- Whether the UI renders SVG or draws to canvas — SVG for now, since it is
-  exportable as-is.
+- Whether the UI renders SVG or draws to canvas — SVG, settled 03/11/2026:
+  the editor overlays hit targets on the engine's SVG.
+- **Which Indian rules.** NBC 2016 as the base; which state bye-law pack
+  comes first is the owner's call.
+- **Edits vs regeneration.** Today a hand edit is kept until the next Generate,
+  which starts fresh. Locking edited rooms through a regenerate is open.
 
 ## Conventions
 

@@ -1,16 +1,16 @@
 # Floorplan generator
 
 Constraint-driven 2D floor-plan generator. Give it a plot, setbacks and a room
-programme; it lays out rooms, a circulation hall, walls, doors and windows, and
-renders an SVG sheet.
+programme; it lays out rooms, a circulation hall, walls, doors, windows and
+furniture, renders an SVG sheet, and lets you edit the result by drag and drop.
 
 The engine is pure TypeScript — no DOM, no I/O, no runtime dependencies — so it
 runs the same in Node and in the browser. The React UI imports it directly.
 
 ## Status
 
-v0 plus doors and a UI. Rooms, hall, walls, windows, doors and an SVG sheet all
-work, and the 2BHK demo brief validates clean. **It is not yet robust**: most
+Rooms, hall, walls, windows, doors, furniture, an SVG sheet and a drag-and-drop
+editor all work, and the 2BHK demo brief validates clean. **It is not yet robust**: most
 other briefs fail the validator, which is what the audit plan in
 [PLAN.md](PLAN.md) is working through. [PROGRESS.md](PROGRESS.md) carries the
 measured numbers rather than claims.
@@ -27,7 +27,8 @@ node dist/demo.js 7 40 0.35  # seed, attempts, effort
 ## Test
 
 ```
-npm test      # compile, then 13 tests on node:test
+npm test      # compile, then 22 tests on node:test
+              # on Windows: npx tsc -p tsconfig.json && node --test dist/tests/engine.test.js
 npm run stress  # the six-brief stress harness
 ```
 
@@ -51,9 +52,15 @@ npm install
 npm run dev
 ```
 
-A form for plot, setbacks, wall and window sizes, room counts, seed and
-attempts, with a debounced live preview and the validation problems listed under
-the sheet.
+A form for plot, setbacks, wall and window sizes, room counts, seed, attempts
+and layout; press Generate. The plan is then editable:
+
+- drag furniture (R rotates, Del deletes; red means it clashes)
+- slide doors and windows along their wall, drag their end dots to resize
+- drag an interior wall to resize the rooms either side
+- Undo / Redo (Ctrl+Z / Ctrl+Y), Re-furnish, Save / Load as JSON
+
+Validation problems are listed under the sheet and update on every edit.
 
 ## How it works
 
@@ -69,6 +76,9 @@ the sheet.
    walls, doors and windows.
 5. `validate.ts` — reports coverage, minimum dimensions, unreachable rooms, door
    capacity, missing entry, and windows against the spec.
+6. `furniture.ts` — furnishes each room with a beam search over positions,
+   scored on clearances, room-specific rules and walkways from the door.
+7. `edit.ts` — the pure edit operations behind the UI editor.
 
 Same seed plus same brief always produces the same plan.
 
@@ -78,6 +88,6 @@ Same seed plus same brief always produces the same plan.
   [PROGRESS.md](PROGRESS.md) for the per-brief numbers.
 - Generation is slow: roughly 15 s for 120 attempts. The UI preview runs fewer
   attempts at lower effort and can surface violations the CLI would search past.
-- `HALL_DEPTH` and the room defaults are plausible values, **not** verified
-  building norms.
+- `HALL_DEPTH`, the room defaults and the furniture clearances are plausible
+  values, **not** verified building norms. Indian norms (NBC 2016) are next.
 - No licence file yet.
