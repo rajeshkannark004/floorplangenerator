@@ -98,6 +98,10 @@ checked through doors, not shared walls.
 | Drawing | Dimension chains, door swings, scaled sheet |
 | Pain points | Area schedule + CSV; NBC 2016 code check with window fix; DXF / SVG / PDF export |
 
+Also done: plot orientation (road side, north arrow, entry on the road,
+front/back fixed) and an optional Vastu mode with a report panel — item 1
+below. Vastu gains are modest; see PROGRESS.md.
+
 Dropped by the owner (03/11/2026): side-by-side options with named versions,
 and the brief-adherence report.
 
@@ -107,7 +111,7 @@ Focus is the generator and the design workflow, not presentation. In order:
 
 | # | Work | Why | Size |
 |---|---|---|---|
-| 1 | **Plot orientation and Vastu.** North arrow and road side in the brief; the entry faces the road. Optional Vastu mode as scored preferences plus a check panel: kitchen south-east, master bedroom south-west, entrance north / east / north-east, no toilet in the north-east. | Indian clients ask for it on almost every house; the generator has no notion of direction today | M |
+| 1 ✓ | **Plot orientation and Vastu.** North arrow and road side in the brief; the entry faces the road. Optional Vastu mode as scored preferences plus a check panel: kitchen south-east, master bedroom south-west, entrance north / east / north-east, no toilet in the north-east. | Indian clients ask for it on almost every house; the generator has no notion of direction today | M |
 | 2 | **Lock rooms and regenerate the rest.** Lock (or hand-edit) rooms; Generate keeps them and lays out only the others. Grid growth starts with locked cells taken. | Today Generate throws away every hand edit; commercial tools (A-Space) work this way | M |
 | 3 | **Indian room types.** Pooja, balcony / sit-out, car porch, wash area by the kitchen, store in the form. With sizes, adjacencies, Vastu zones and furniture. | The programme is too Western for Indian briefs | S–M |
 | 4 | **Room-connection input.** The user says which rooms must connect (master ↔ its bath, kitchen ↔ dining); the generator must honour it, and says when it cannot. | Every serious tool and method takes an adjacency graph (Finch3D graph rules, GPLAN); ours is a fixed table | M |
@@ -119,9 +123,10 @@ Also still open from earlier work:
 - Code check: read the NBC text for the rules taken from secondary sources
   (light and ventilation, bath ventilator, kitchen width); state bye-law
   presets for setbacks, coverage and FAR; room heights once the brief has them.
-- Geometry honesty: the front/back convention is flipped between the entry
-  and the renderer; exterior walls arrive as collinear pieces; DXF walls
+- Geometry honesty: exterior walls arrive as collinear pieces; DXF walls
   overlap at junctions.
+- Vastu mode can double generation time (it falls back to a plain plan when
+  its own search fails); the Web Worker matters more now.
 - Generation runs on the main thread (~7 s at preview settings); a Web
   Worker would stop the UI freezing.
 - `npm test` fails on Windows (directory passed to `node --test`).

@@ -15,6 +15,7 @@ import { areaSchedule, carpetArea, scheduleCSV } from '../engine/src/schedule.js
 import { planDXF } from '../engine/src/dxf.js';
 import { checkCompliance, fixWindows, DEFAULT_COMPLIANCE } from '../engine/src/compliance.js';
 import { dimensionChains } from '../engine/src/render-svg.js';
+import { compassFrame, sheetSideCompass, zoneAt, vastuReport } from '../engine/src/orient.js';
 
 const demo: Brief = {
   plot: { w: 10, d: 15 },
@@ -384,4 +385,31 @@ test('fixing windows clears the ventilation failures it can', () => {
     const [lo, hi] = openingRange(w);
     assert.ok(hi - lo >= 0.4 && lo >= -1e-9, 'windows stay on the plan');
   }
+});
+
+test('compass: the road is at the bottom, and north follows from the facing', () => {
+  // North-facing plot: the road (bottom) is north, so north points down the sheet.
+  assert.deepEqual(compassFrame('N').north, { x: 0, y: 1 });
+  assert.equal(sheetSideCompass('N', 'bottom'), 'N');
+  assert.equal(sheetSideCompass('N', 'left'), 'E');
+  // East-facing: bottom is east, right is north, top is west.
+  assert.equal(sheetSideCompass('E', 'bottom'), 'E');
+  assert.equal(sheetSideCompass('E', 'right'), 'N');
+  assert.equal(sheetSideCompass('E', 'top'), 'W');
+  const fp = { x: 0, y: 0, w: 9, h: 9 };
+  // East-facing: bottom-right corner is north-east, top-left south-west, centre is centre.
+  assert.equal(zoneAt(fp, 'E', 8.5, 8.5), 'NE');
+  assert.equal(zoneAt(fp, 'E', 0.5, 0.5), 'SW');
+  assert.equal(zoneAt(fp, 'E', 4.5, 4.5), 'C');
+});
+
+test('with a road side, the entry is on it and Vastu is reported', () => {
+  const b = { ...demo, orientation: { facing: 'E' as const } };
+  const p = generate(b, 3, 30, 0.4, 'grid');
+  const entry = p.doors.find((d) => d.entry)!;
+  assert.ok(entry.axis === 'h' && Math.abs(entry.y1 - p.footprint.h) < 1e-6, 'entry on the bottom (road) edge');
+  const r = vastuReport(p, 'E');
+  assert.ok(r.items.some((i) => i.label === 'Kitchen') && r.items.some((i) => i.label === 'Entrance'));
+  assert.equal(r.items.find((i) => i.label === 'Entrance')!.zone, 'E');
+  assert.ok(r.score >= 0 && r.score <= 100);
 });

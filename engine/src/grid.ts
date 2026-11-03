@@ -1,6 +1,7 @@
 import type { Rect } from './geometry.js';
 import { type Room, type RoomType, HALL_DEPTH, ADJACENCY } from './brief.js';
 import { allowedPair, DOOR_WIDTH, DOOR_CLEARANCE } from './doors.js';
+import { type Compass, type VastuRole, vastuRoles, preferredDirection, zoneAt, verdict, VASTU_COST } from './orient.js';
 
 export type Rng = () => number;
 
@@ -23,6 +24,15 @@ const WINDOW_RUN = 1.2;
 const WIDTH_MISS = 40;
 /** The shortest straight stretch of shared wall that can take a door. */
 const DOOR_RUN = DOOR_WIDTH + 2 * DOOR_CLEARANCE;
+/** Score per point of Vastu cost (see `VASTU_COST`): a room in an avoided zone costs about a bad shape. */
+const VASTU_WEIGHT = 2;
+/** Cost of a living room with no front wall long enough for the entry door. */
+const NO_FRONT_ENTRY = 60;
+/** The entry door's run: a 1.0 m door with its corner clearances. */
+const ENTRY_RUN = 1.0 + 2 * DOOR_CLEARANCE;
+
+/** Which way the plot faces, and whether to plan for Vastu. */
+export interface Orient { facing: Compass; vastu: boolean }
 
 interface Box { c0: number; r0: number; c1: number; r1: number }
 
@@ -74,6 +84,9 @@ export interface GridPlan {
   target: number[];
   rooms: Room[];
   hall: number;
+  orient: Orient | null;
+  /** Vastu role per room index, when planning for Vastu. */
+  roles: VastuRole[] | null;
 }
 
 /**
@@ -95,6 +108,10 @@ function gridScore(g: GridPlan): number {
   // Longest straight run of outside wall: a window needs WINDOW_RUN of it,
   // not just a corner touching the boundary.
   const outside = new Array<number>(n).fill(0);
+  // Longest run along the front (road) edge, the bottom row: where the entry goes.
+  const front = new Array<number>(n).fill(0);
+  const sumC = new Float64Array(n);
+  const sumR = new Float64Array(n);
   const width = new Array<number>(n).fill(Infinity);
   const hrun = new Int32Array(cols * rows);
   const vrun = new Int32Array(cols * rows);
@@ -123,6 +140,8 @@ function gridScore(g: GridPlan): number {
     const c = k % cols;
     const r = (k - c) / cols;
     count[o]++;
+    sumC[o] += c;
+    sumR[o] += r;
     if (c < minC[o]) minC[o] = c;
     if (c > maxC[o]) maxC[o] = c;
     if (r < minR[o]) minR[o] = r;
@@ -142,6 +161,13 @@ function gridScore(g: GridPlan): number {
   };
   scanEdge(cols, (t) => t, cw);
   scanEdge(cols, (t) => (rows - 1) * cols + t, cw);
+  for (let t = 0; t < cols; ) {
+    const o = owner[(rows - 1) * cols + t];
+    let e = t;
+    while (e < cols && owner[(rows - 1) * cols + e] === o) e++;
+    if (o >= 0) front[o] = Math.max(front[o], (e - t) * cw);
+    t = e;
+  }
   scanEdge(rows, (t) => t * cols, ch);
   scanEdge(rows, (t) => t * cols + cols - 1, ch);
 
@@ -222,6 +248,20 @@ function gridScore(g: GridPlan): number {
     }
   }
   s += (n - seen.size) * 60;
+
+  if (g.orient) {
+    // The entry faces the road, so the living room needs a front wall to take it.
+    const living = rooms.findIndex((r) => r.type === 'living');
+    if (living >= 0 && front[living] < ENTRY_RUN - 1e-6) s += NO_FRONT_ENTRY;
+  }
+  if (g.orient?.vastu && g.roles) {
+    for (let o = 0; o < n; o++) {
+      if (!count[o]) continue;
+      const x = g.fp.x + (sumC[o] / count[o] + 0.5) * cw;
+      const y = g.fp.y + (sumR[o] / count[o] + 0.5) * ch;
+      s += VASTU_COST[verdict(g.roles[o], zoneAt(g.fp, g.orient.facing, x, y))] * VASTU_WEIGHT;
+    }
+  }
   return s;
 }
 
@@ -309,8 +349,8 @@ function toParts(ids: number[], cols: number, fp: Rect, cw: number, ch: number):
  * Rooms come back with `parts` set and `rect` as their bounding box. Every
  * random choice comes from `rng`, so a seed always reproduces its plan.
  */
-export function growLayout(fp: Rect, rooms: Room[], rng: Rng, effort = 1): Room[] {
-  const g = growGrid(fp, rooms, rng, effort);
+export function growLayout(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: Orient | null = null): Room[] {
+  const g = growGrid(fp, rooms, rng, effort, orient);
   refineGrid(g, rng, Math.round(REFINE_MOVES * effort));
   return gridRooms(g);
 }
@@ -320,7 +360,7 @@ export function growLayout(fp: Rect, rooms: Room[], rng: Rng, effort = 1): Room[
  * search. Cheap enough to run for every attempt, so candidates can be ranked
  * on `score` and only the best few refined.
  */
-export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1): GridPlan {
+export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1, orient: Orient | null = null): GridPlan {
   const cols = Math.max(1, Math.round(fp.w / GRID_CELL));
   const rows = Math.max(1, Math.round(fp.h / GRID_CELL));
   const cw = fp.w / cols;
@@ -353,7 +393,8 @@ export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1): GridPla
   const free0 = cols * rows - (hall >= 0 ? cells[hall].length : 0);
   const sumArea = others.reduce((s, i) => s + rooms[i].area, 0);
   const target = rooms.map((r, i) => (i === hall ? cells[i].length : Math.max(1, Math.round((r.area / sumArea) * free0))));
-  const plan: GridPlan = { fp, cells, score: 0, cols, rows, cw, ch, owner, target, rooms, hall };
+  const roles = orient?.vastu ? (() => { const m = vastuRoles(rooms); return rooms.map((r) => m.get(r.id)!); })() : null;
+  const plan: GridPlan = { fp, cells, score: 0, cols, rows, cw, ch, owner, target, rooms, hall, orient, roles };
 
   // 1. Seeds. Sample a few free cells per room and keep the best one: away
   // from the seeds already down (up to the room's own size — further gains
@@ -391,6 +432,14 @@ export function growGrid(fp: Rect, rooms: Room[], rng: Rng, effort = 1): GridPla
       if (link < Infinity) s -= link;
       if (toHall) s -= 0.5 * Math.max(0, Math.abs(y - ((hallBox.r0 + hallBox.r1) / 2) * ch) - ((hallBox.r1 - hallBox.r0) / 2) * ch);
       if (rooms[i].daylight) s -= 0.5 * Math.min(x, y, fp.w - x, fp.h - y);
+      // The living room, which takes the entry, starts near the road.
+      if (orient && rooms[i].type === 'living') s -= 0.5 * (fp.h - y);
+      // Vastu: start each room towards its preferred compass zone.
+      // The living room keeps to the road for the entry, so its zone only
+      // decides which end of the road front it takes (the y part is dropped).
+      const raw = roles ? preferredDirection(roles[i], orient!.facing) : null;
+      const dir = raw && rooms[i].type === 'living' ? { x: Math.sign(raw.x), y: 0 } : raw;
+      if (dir) s += 0.6 * ((x - fp.w / 2) * dir.x + (y - fp.h / 2) * dir.y);
       s += rng() * 0.1;
       if (s > bestScore) {
         bestScore = s;

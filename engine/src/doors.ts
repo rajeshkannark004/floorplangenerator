@@ -243,13 +243,16 @@ export function placeDoors(rooms: Room[], walls: WallSeg[], fp: Rect, rng: Rng =
   const living = rooms.find((r) => r.type === 'living') ?? rooms[0];
 
   // Entry: the longest exterior run on the living room, preferring the front
-  // (lowest y) elevation.
+  // elevation — the road side, drawn at the bottom of the sheet (highest y),
+  // where `setbacks.front` lies. It used to prefer the lowest y, which is the
+  // back of the plot as the renderer draws it.
   if (living) {
+    const front = fp.y + fp.h;
     const runs = exteriorSegmentsOf(living, walls)
       .filter((w) => segLen(w) >= 1.0 + 2 * DOOR_CLEARANCE)
       .sort((p, q) => {
-        const pFront = Math.abs(Math.min(p.y1, p.y2) - fp.y) < EPS ? 1 : 0;
-        const qFront = Math.abs(Math.min(q.y1, q.y2) - fp.y) < EPS ? 1 : 0;
+        const pFront = Math.abs(p.y1 - front) < EPS && Math.abs(p.y2 - front) < EPS ? 1 : 0;
+        const qFront = Math.abs(q.y1 - front) < EPS && Math.abs(q.y2 - front) < EPS ? 1 : 0;
         if (pFront !== qFront) return qFront - pFront;
         return segLen(q) - segLen(p);
       });

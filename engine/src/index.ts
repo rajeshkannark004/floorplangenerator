@@ -1,7 +1,8 @@
 import { type Brief, footprint, program, normaliseAreas, withHall, type Room } from './brief.js';
 import type { Rect } from './geometry.js';
 import { subdivide, mulberry32 } from './subdivide.js';
-import { growGrid, refineGrid, gridRooms, type GridPlan } from './grid.js';
+import { growGrid, refineGrid, gridRooms, type GridPlan, type Orient } from './grid.js';
+import { vastuCost } from './orient.js';
 import { roomArea } from './shape.js';
 import { layoutScore } from './score.js';
 import { buildWalls } from './walls.js';
@@ -23,6 +24,7 @@ export * from './schedule.js';
 export * from './dxf.js';
 export * from './compliance.js';
 export { GRID_CELL } from './grid.js';
+export * from './orient.js';
 
 /**
  * How rooms are laid out. 'split' is the original area-exact recursive
@@ -71,6 +73,7 @@ function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: 
   const rooms0: Room[] = useHall ? withHall(program(brief), fp) : program(brief);
   const targets = normaliseAreas(rooms0, fp);
   let best: Plan | null = null;
+  const orient: Orient | null = brief.orientation ? { facing: brief.orientation.facing, vastu: !!brief.vastu } : null;
 
   const consider = (rooms: Room[], i: number) => {
     // Grid growth can starve a room of cells on a crowded plan; that is not a candidate.
@@ -94,7 +97,14 @@ function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: 
     // validator rejects should never beat one it accepts on shape alone.
     const windows = placeWindows(rooms, walls, brief.windowWidth, doors);
     const problems = validate(rooms, walls, windows, fp, brief, doors).length;
-    const score = layoutScore(rooms, fp) + stuck * 60 + overload * 15 + problems * PROBLEM_WEIGHT;
+    let score = layoutScore(rooms, fp) + stuck * 60 + overload * 15 + problems * PROBLEM_WEIGHT;
+    if (orient) {
+      // With a road side known, the entry belongs on it.
+      const entry = doors.find((d) => d.entry);
+      const onFront = entry && entry.axis === 'h' && Math.abs(entry.y1 - (fp.y + fp.h)) < 1e-6;
+      if (!onFront) score += 60;
+      if (orient.vastu) score += vastuCost(rooms, fp, orient.facing) * 3;
+    }
 
     if (!best || score < best.score) {
       best = { rooms, walls, windows, doors, footprint: fp, score, seed };
@@ -108,7 +118,7 @@ function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: 
     const pool: { g: GridPlan; rng: () => number; i: number }[] = [];
     for (let i = 0; i < attempts; i++) {
       const rng = mulberry32(seed * 100003 + i);
-      pool.push({ g: growGrid(fp, targets, rng, effort), rng, i });
+      pool.push({ g: growGrid(fp, targets, rng, effort, orient), rng, i });
     }
     pool.sort((a, b) => a.g.score - b.g.score || a.i - b.i);
     for (const { g, rng, i } of pool.slice(0, GRID_FINALISTS)) {
@@ -133,6 +143,24 @@ function search(brief: Brief, fp: Rect, seed: number, attempts: number, effort: 
  * door rules cannot be satisfied without it.
  */
 export function generate(brief: Brief, seed = 1, attempts = 400, effort = 1, layout: Layout = 'split'): Plan {
+  const first = generateOnce(brief, seed, attempts, effort, layout);
+  if (!brief.vastu || !brief.orientation || first.infeasible || !shortfall(first, brief)) return first;
+  // Vastu is a preference, never worth a broken plan or an entry away from
+  // the road. Pulling rooms towards their zones can leave no such layout in
+  // the sample; then plan without it and keep whichever falls shorter, the
+  // Vastu plan on a tie.
+  const plain = generateOnce({ ...brief, vastu: false }, seed, attempts, effort, layout);
+  return shortfall(plain, brief) < shortfall(first, brief) ? plain : first;
+}
+
+/** Validation problems count double; an entry off the road side counts once. */
+function shortfall(plan: Plan, brief: Brief): number {
+  const entry = plan.doors.find((d) => d.entry);
+  const onRoad = !!entry && entry.axis === 'h' && Math.abs(entry.y1 - (plan.footprint.y + plan.footprint.h)) < 1e-6;
+  return problemsOf(plan, brief).length * 2 + (brief.orientation && !onRoad ? 1 : 0);
+}
+
+function generateOnce(brief: Brief, seed: number, attempts: number, effort: number, layout: Layout): Plan {
   const fp = footprint(brief);
 
   const reason = infeasibleReason(brief, fp);

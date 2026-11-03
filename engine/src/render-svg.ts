@@ -5,6 +5,7 @@ import type { DoorSeg } from './doors.js';
 import type { Rect } from './geometry.js';
 import { partsOf, labelPoint, roomArea } from './shape.js';
 import { type Furniture, placeFurniture, furnitureSVG } from './furniture.js';
+import { compassFrame, zoneAt } from './orient.js';
 
 export interface Plan {
   rooms: Room[];
@@ -252,6 +253,43 @@ export function renderSVG(plan: Plan, brief: Brief, scale = 46, margin = 60, fur
     const size = partsOf(r).length > 1 ? `${roomArea(r).toFixed(1)} m²` : `${r.rect.w.toFixed(1)}×${r.rect.h.toFixed(1)} m`;
     parts.push(`<text x="${cx.toFixed(1)}" y="${(cy - 2).toFixed(1)}" text-anchor="middle" font-size="11" fill="#23272b" stroke="#ffffff" stroke-width="3" paint-order="stroke">${esc(name)}</text>`);
     parts.push(`<text x="${cx.toFixed(1)}" y="${(cy + 11).toFixed(1)}" text-anchor="middle" font-size="9" fill="#6b7280" stroke="#ffffff" stroke-width="3" paint-order="stroke">${size}</text>`);
+  }
+
+  // orientation: a north arrow, the road, and with Vastu the compass zones
+  const facing = brief.orientation?.facing;
+  if (facing) {
+    if (brief.vastu) {
+      const zone = '#b08d57';
+      for (const k of [1, 2]) {
+        const x = px((fp.w * k) / 3);
+        const y = py((fp.h * k) / 3);
+        parts.push(`<line x1="${x.toFixed(1)}" y1="${py(0).toFixed(1)}" x2="${x.toFixed(1)}" y2="${py(fp.h).toFixed(1)}" stroke="${zone}" stroke-width="0.8" stroke-dasharray="3 4"/>`);
+        parts.push(`<line x1="${px(0).toFixed(1)}" y1="${y.toFixed(1)}" x2="${px(fp.w).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${zone}" stroke-width="0.8" stroke-dasharray="3 4"/>`);
+      }
+      for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) {
+          const cx = (fp.w * (i + 0.5)) / 3;
+          const cy = (fp.h * (j + 0.5)) / 3;
+          const name = zoneAt(fp, facing, cx, cy);
+          parts.push(`<text x="${(px((fp.w * i) / 3) + 4).toFixed(1)}" y="${(py((fp.h * j) / 3) + 12).toFixed(1)}" font-size="9" fill="${zone}" font-weight="bold">${name === 'C' ? 'Centre' : name}</text>`);
+        }
+      }
+    }
+    const { north } = compassFrame(facing);
+    const ax = W - 40;
+    const ay = 40;
+    const r = 15;
+    const tip = { x: ax + north.x * r, y: ay + north.y * r };
+    const tail = { x: ax - north.x * r * 0.6, y: ay - north.y * r * 0.6 };
+    const side = { x: -north.y * 5, y: north.x * 5 };
+    parts.push(`<circle cx="${ax}" cy="${ay}" r="${r + 4}" fill="none" stroke="#23272b" stroke-width="0.8"/>`);
+    parts.push(`<path d="M ${tip.x.toFixed(1)} ${tip.y.toFixed(1)} L ${(tail.x + side.x).toFixed(1)} ${(tail.y + side.y).toFixed(1)} L ${ax} ${ay} Z" fill="#23272b"/>`);
+    parts.push(`<path d="M ${tip.x.toFixed(1)} ${tip.y.toFixed(1)} L ${(tail.x - side.x).toFixed(1)} ${(tail.y - side.y).toFixed(1)} L ${ax} ${ay} Z" fill="#ffffff" stroke="#23272b" stroke-width="0.8"/>`);
+    const lx = ax + north.x * (r + 12);
+    const ly = ay + north.y * (r + 12) + 4;
+    parts.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="11" font-weight="bold" fill="#23272b">N</text>`);
+    const roadY = py(fp.h + brief.setbacks.front) + 14;
+    parts.push(`<text x="${px(fp.w / 2).toFixed(1)}" y="${roadY.toFixed(1)}" text-anchor="middle" font-size="10" letter-spacing="2" fill="#6b7280">ROAD · ${facing}-FACING</text>`);
   }
 
   // title block

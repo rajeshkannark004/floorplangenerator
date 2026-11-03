@@ -503,3 +503,19 @@ button.link {
     grid-column: 2;
   }
 }
+
+.vastu summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.check.vastu-check {
+  align-self: end;
+  margin: 0 0 8px;
+}
+
+.field select {
+  width: 100%;
+}

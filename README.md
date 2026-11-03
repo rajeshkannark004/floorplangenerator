@@ -65,6 +65,11 @@ and layout; press Generate. The plan is then editable:
 - export DXF (millimetres, for AutoCAD and other CAD tools), SVG, or print to
   scale (1:50 / 1:100 / 1:200) and save as PDF
 
+Set the road side (plot facing) to get a north arrow and the entry on the
+road; tick "Plan for Vastu" to bias rooms towards their Vastu zones (kitchen
+south-east, master bedroom south-west, …) with a Vastu panel scoring the
+result. A valid plan always beats a better Vastu score.
+
 Dimension lines run round the plan and update as you edit. A code-check
 panel tests the plan against NBC 2016 (room sizes, toilet and kitchen areas,
 window area for your climate, bath ventilation) and any local bye-law limits

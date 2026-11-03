@@ -3,6 +3,7 @@ import type { Brief } from './brief.js';
 import { labelPoint, roomArea } from './shape.js';
 import { symbol, furniturePoint, type Prim, type Furniture } from './furniture.js';
 import { type Plan, dimensionChains, doorSwingSide } from './render-svg.js';
+import { compassFrame } from './orient.js';
 
 /*
  * AutoCAD R12 ASCII DXF, the version every CAD program reads. Plain LINE, ARC,
@@ -198,6 +199,21 @@ export function planDXF(plan: Plan, brief: Brief): string {
       const mid = (c.marks[i] + c.marks[i - 1]) / 2;
       w.text('DIMS', P(mid, at - 0.12), 0.12, String(Math.round(len * MM)), horizontal ? 0 : 90);
     }
+  }
+
+  // north arrow beyond the top-right corner of the plot, and the road
+  const facing = brief.orientation?.facing;
+  if (facing) {
+    const { north } = compassFrame(facing);
+    const c = { x: brief.plot.w - sb.left + 1, y: -sb.back - 1 };
+    const r = 0.6;
+    const tip = { x: c.x + north.x * r, y: c.y + north.y * r };
+    const tail = { x: c.x - north.x * r, y: c.y - north.y * r };
+    const side = { x: -north.y * 0.2, y: north.x * 0.2 };
+    w.circle('TEXT', c, r + 0.1);
+    w.poly('TEXT', [tip, { x: tail.x + side.x, y: tail.y + side.y }, { x: tail.x - side.x, y: tail.y - side.y }]);
+    w.text('TEXT', { x: c.x + north.x * (r + 0.35), y: c.y + north.y * (r + 0.35) }, 0.25, 'N');
+    w.text('TEXT', { x: fp.w / 2, y: fp.h + sb.front + 0.4 }, 0.25, `ROAD (${facing}-FACING)`);
   }
 
   w.pair(0, 'ENDSEC');

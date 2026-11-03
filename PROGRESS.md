@@ -362,10 +362,46 @@ asked for functionality. Research on layout methods (MIQP, GPLAN), tools
 (A-Space, Finch3D), Vastu and NBC stairs is summarised with sources in
 PLAN.md, *Next: functionality*.
 
+### Orientation and Vastu (03/11/2026)
+
+- `Brief.orientation.facing` is the road side ("east-facing"). The road is
+  drawn at the bottom; the sheet gets a north arrow and a road label, the DXF
+  too. `orient.ts` maps plan points to compass zones (thirds each way).
+- **Front/back fix**: the entry used to prefer the lowest y, which the
+  renderer draws as the back. It now prefers the front (road) edge. With an
+  orientation set, the grid score charges a living room with no front wall
+  for the entry, and the living seed starts near the road.
+- **Vastu mode** (`Brief.vastu`): kitchen, master bedroom, living and baths
+  are pulled towards their zones at seeding, and every room's zone is scored
+  (`VASTU_COST`). A Vastu panel reports each room's zone, the entrance side
+  and a 0–100 score; with Vastu on, the drawing shows the zone grid. Rules are
+  from blogs and builders' guides — preferences, not validation.
+- What did not work: pulling every room, or weighting Vastu heavily, broke
+  door paths (0/8 valid on 2BHK east-facing) or pushed the entry off the road
+  (1/8 on west-facing). Now a Vastu plan that is invalid or has its entry off
+  the road is compared with a plain road-facing plan and loses to it.
+
+2BHK, grid, seeds 1–8, preview settings (60 attempts, effort 0.6):
+
+```
+                 valid  entry on road  Vastu score  time (sequential)
+E, no facing      8/8       1/8            52          7.2 s
+E, facing         8/8       8/8            61         10.4 s
+E, Vastu          8/8       8/8            65         18.8 s
+N / S / W, Vastu  8/8       8/8          72 / 50 / 42   (parallel run)
+```
+
+Honest reading: road entry and validity hold everywhere; Vastu gains are
+modest (east +4, north +12 over facing-only) and cost up to twice the time,
+because the Vastu search often fails and the plain plan wins. South- and
+west-facing plots conflict with Vastu by nature (road side vs north-east
+living). Better Vastu needs a stronger layout core (PLAN.md item 6).
+
+Tests: 30 pass.
+
 ## Next task
 
-Item 1 in PLAN.md: plot orientation (north arrow, road side, entry facing
-the road) and an optional Vastu mode. Then lock-and-regenerate.
+Item 2 in PLAN.md: lock rooms and regenerate the rest.
 
 ## How to run
 

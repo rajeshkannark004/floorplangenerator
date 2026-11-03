@@ -17,6 +17,14 @@ export interface Brief {
   wallThickness: number;
   windowWidth: number;
   rooms: RoomSpec[];
+  /**
+   * The compass side the road is on ("an east-facing plot"). The road side is
+   * the front of the plot, drawn at the bottom of the sheet. Absent: no
+   * orientation, and no Vastu.
+   */
+  orientation?: { facing: 'N' | 'E' | 'S' | 'W' };
+  /** Bias the layout towards Vastu placements. Needs `orientation`. */
+  vastu?: boolean;
 }
 
 export interface Room {

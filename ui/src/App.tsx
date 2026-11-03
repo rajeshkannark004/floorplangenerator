@@ -17,10 +17,13 @@ import {
   type Layout,
   type Plan,
   type RoomSpec,
+  type Compass,
+  vastuReport,
 } from '../../engine/src/index.js';
 import Editor from './Editor.js';
 import ScheduleTable from './Schedule.js';
 import CompliancePanel from './Compliance.js';
+import VastuPanel from './Vastu.js';
 import { download, printAtScale } from './exports.js';
 
 interface FormState {
@@ -38,6 +41,9 @@ interface FormState {
   seed: number;
   attempts: number;
   layout: Layout;
+  /** Road side of the plot, or none. */
+  facing: '' | Compass;
+  vastu: boolean;
 }
 
 const INITIAL: FormState = {
@@ -55,6 +61,8 @@ const INITIAL: FormState = {
   seed: 7,
   attempts: 60,
   layout: 'grid',
+  facing: 'E',
+  vastu: false,
 };
 
 /** Preview runs at reduced search effort; the CLI keeps the thorough settings. */
@@ -76,6 +84,7 @@ function toBrief(f: FormState): Brief {
     wallThickness: f.wall,
     windowWidth: f.windowW,
     rooms,
+    ...(f.facing ? { orientation: { facing: f.facing }, vastu: f.vastu } : {}),
   };
 }
 
@@ -308,6 +317,23 @@ export default function App() {
             buildable {buildable.w.toFixed(1)} × {buildable.d.toFixed(1)} m
             {tooSmall ? ' — too small for a programme' : ''}
           </p>
+          <div className="row">
+            <label className="field">
+              <span className="field-label">Road side (plot facing)</span>
+              <select value={form.facing} onChange={(e) => set('facing')(e.target.value as FormState['facing'])}>
+                <option value="">Not set</option>
+                <option value="N">North</option>
+                <option value="E">East</option>
+                <option value="S">South</option>
+                <option value="W">West</option>
+              </select>
+            </label>
+            <label className="check vastu-check">
+              <input type="checkbox" checked={form.vastu && !!form.facing} disabled={!form.facing} onChange={(e) => set('vastu')(e.target.checked)} />
+              <span>Plan for Vastu</span>
+            </label>
+          </div>
+          <p className="muted">The road is drawn at the bottom; the entry goes on that side.</p>
         </section>
 
         <section>
@@ -429,6 +455,9 @@ export default function App() {
               {stats ? ` · score ${stats.score.toFixed(2)} · ${Math.round(stats.ms)} ms` : ''}
               {history && history.at > 0 ? ` · ${history.at} edit${history.at > 1 ? 's' : ''}` : ''}
             </p>
+          ) : null}
+          {plan && brief?.orientation && !plan.infeasible ? (
+            <VastuPanel report={vastuReport(plan, brief.orientation.facing)} facing={brief.orientation.facing} planned={!!brief.vastu} />
           ) : null}
           {schedule ? (
             <CompliancePanel checks={checks} opts={codeOpts} onOpts={setCodeOpts} onFixWindows={shortWindows ? widenWindows : undefined} />
