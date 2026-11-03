@@ -10,10 +10,10 @@ runs the same in Node and in the browser. The React UI imports it directly.
 ## Status
 
 Rooms, hall, walls, windows, doors, furniture, an SVG sheet and a drag-and-drop
-editor all work, and the 2BHK demo brief validates clean. **It is not yet robust**: most
-other briefs fail the validator, which is what the audit plan in
-[PLAN.md](PLAN.md) is working through. [PROGRESS.md](PROGRESS.md) carries the
-measured numbers rather than claims.
+editor all work, and the 2BHK demo brief validates clean. **Generation is not
+yet robust**: 3BHK and narrow plots fail the validator on most seeds.
+[PLAN.md](PLAN.md) has what is done and what is next; [PROGRESS.md](PROGRESS.md)
+carries the measured numbers rather than claims.
 
 ## Run
 

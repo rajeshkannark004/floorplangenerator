@@ -153,29 +153,18 @@ every edit. Every edit op is a pure function returning a new plan.
 
 ## Status
 
-- Feature stages 0–7 done (engine, walls, windows, validator, SVG, doors, UI).
-  Stage 8 (export, presets) waits behind the audit plan.
+- Done (03/11/2026): engine with two layouts, furniture, the editor, dimension
+  chains, area schedule, NBC 2016 code check, DXF / SVG / PDF export. See
+  [PLAN.md](PLAN.md), *Done*.
 - External audit (01/11/2026): only the 2BHK demo validates reliably. 1BHK,
-  3BHK and narrow fail; tiny and overstuffed are now rejected as infeasible.
-- Audit phases: 0 (harness + tests) done; 2.1 (optional hall) and 2.4
-  (infeasible briefs) done; **Phase 1 (door rules) is written but not on main —
-  no local branch, stash or remote branch holds it**; next is **Phase 4
-  (performance)**: rank cheaply, build walls/doors for the top K, Web Worker in
-  the UI. Phase 6 (real norms) needs the owner.
-- Phase 1 gate: 1BHK and 3BHK at 7/8 seeds or better at 60 attempts, effort 0.6.
-- Timings (from PROGRESS.md): 120 attempts / effort 0.5 ~15 s; 60 / 0.6 ~7 s
-  (UI preview); 150 / 1.0 ~29 s.
-
-- **New direction (02/11/2026):** the splitter is being replaced by an
-  architect-style generator with no AI: grid growth (A), zones first (B),
-  simulated annealing (C), self-repair (D). Step A is next. Details in
-  [PLAN.md](PLAN.md), *Next direction*.
-- UI now generates only when the Generate button is pressed.
-- **Furniture and editor (03/11/2026)**, sections above. Verified by tests and
-  by driving the UI in headless Edge (drag, resize, wall move, undo).
-- **Next (03/11/2026): architect pain points**, using **Indian norms** (NBC
-  2016 and state bye-laws) for compliance. Research and order in
-  [PLAN.md](PLAN.md), *Architect pain points*.
+  3BHK and narrow fail often; tiny and overstuffed are rejected as infeasible.
+  The audit's Phase 1 door rules were written but never reached main.
+- Timings: demo 120 attempts / effort 0.5 ~5 s locally; UI preview 60 / 0.6
+  ~7 s, on the main thread.
+- **Next (03/11/2026): functionality**, in [PLAN.md](PLAN.md), *Next*: plot
+  orientation and Vastu, lock rooms and regenerate, Indian room types,
+  room-connection input, G+1 with a stair, a stronger layout core.
+- Side-by-side options and the brief-adherence report were dropped.
 - **Step A done (02/11/2026):** `engine/src/grid.ts` (grid growth + annealing,
   L-shaped rooms via `Room.parts`) and `engine/src/shape.ts`. Select with
   `generate(brief, seed, attempts, effort, 'grid')`, the CLI's 5th arg, the

@@ -4,15 +4,14 @@ Last updated: 03/11/2026
 
 ## Where things stand
 
-Stages 0–7 of PLAN.md are done. The engine generates a plan end to end — rooms,
-walls, windows, doors — renders an SVG, and the React UI in `ui/` imports the
-engine directly with a live preview.
+The engine generates a plan end to end — rooms, walls, windows, doors,
+furniture — and the React UI edits it, checks it against NBC 2016 and exports
+it. PLAN.md, *Done*, has the list.
 
-**It works reliably on one brief.** An external audit on 01/11/2026 ran six
-briefs and only the 2BHK demo validated on every seed; the rest failed badly.
-Treat everything below as true of the demo brief, and see the audit section for
-what actually holds across briefs. The audit plan in PLAN.md is what the work is
-following now.
+**Generation is reliable on few briefs.** An external audit on 01/11/2026 ran
+six briefs and only the 2BHK demo validated on every seed. Grid layout has
+since fixed 1BHK; 3BHK and narrow still fail on most seeds (item 6 in
+PLAN.md). Entries below are dated; older ones describe the code as it was.
 
 Sample run: 10×15 m plot, 1.5 m setbacks all round → 7×12 m buildable
 footprint, 9 rooms (8 plus the hall), 28 wall segments (14 exterior), 7 windows,
@@ -356,24 +355,17 @@ an exhaust fan. Room heights are not checked (2D).
 
 Tests: 28 pass.
 
+### Direction (03/11/2026, later)
+
+The owner dropped side-by-side options and the brief-adherence report and
+asked for functionality. Research on layout methods (MIQP, GPLAN), tools
+(A-Space, Finch3D), Vastu and NBC stairs is summarised with sources in
+PLAN.md, *Next: functionality*.
+
 ## Next task
 
-Options side by side and named versions; then the brief-adherence report.
-The grid work below is still open.
-
-### Earlier next task (02/11/2026)
-
-Grid: 3BHK and narrow, then step B (zones first, hall only where it joins
-zones). The UI defaults to grid; the CLI and harness default to split.
-
-Earlier plan — Phase 4's "rank cheap first" is now done for grid; the rest
-waits on whether split stays: rank candidates cheaply first and build walls and doors
-only for the top K, then move `generate()` into a Web Worker in the UI. That
-unblocks Phase 1, whose rules are written but cannot be gated while 60 attempts
-samples the legal layouts so thinly.
-
-Stage 8 — export and presets — waits until the audit phases are green, so the
-presets can ship as regression cases rather than as more briefs that fail.
+Item 1 in PLAN.md: plot orientation (north arrow, road side, entry facing
+the road) and an optional Vastu mode. Then lock-and-regenerate.
 
 ## How to run
 
