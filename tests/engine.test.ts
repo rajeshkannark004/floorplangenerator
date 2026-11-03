@@ -330,3 +330,25 @@ test('DXF export is well formed', () => {
   assert.ok(values.filter((v) => v === 'LINE').length > plan.walls.length * 4);
   assert.ok(!values.some((v) => v === 'NaN' || v.includes('NaN')), 'no NaN coordinates');
 });
+
+test('re-furnishing offers other good arrangements, all clash-free', () => {
+  const t = demo.wallThickness;
+  const first = placeFurniture(plan, t, 0);
+  const hit = (a: Rect, b: Rect) => a.x < b.x + b.w - 1e-9 && b.x < a.x + a.w - 1e-9 && a.y < b.y + b.h - 1e-9 && b.y < a.y + a.h - 1e-9;
+  let differs = 0;
+  const kinds = (fs: typeof first, id: string) => fs.filter((f) => f.roomId === id).map((f) => f.kind.replace(/NS$|Set$|[46]$/, '')).sort().join();
+  for (let v = 1; v <= 8; v++) {
+    const alt = placeFurniture(plan, t, v);
+    if (JSON.stringify(alt) !== JSON.stringify(first)) differs++;
+    for (const r of plan.rooms) {
+      const has = kinds(alt, r.id).split(',');
+      for (const k of kinds(first, r.id).split(',').filter(Boolean)) assert.ok(has.includes(k), `variant ${v}: ${r.id} keeps its ${k}`);
+    }
+    for (const f of alt) {
+      for (const d of plan.doors) assert.ok(!inDoorSwing(f.rect, d), `variant ${v}: ${f.kind} clear of doors`);
+      for (const g of alt) if (g !== f) assert.ok(!hit(f.rect, g.rect), `variant ${v}: ${f.kind} clear of ${g.kind}`);
+    }
+  }
+  assert.ok(differs > 0, 'some step gives a different layout');
+  assert.deepEqual(placeFurniture(plan, t, 0), first, 'step 0 is stable');
+});

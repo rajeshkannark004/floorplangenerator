@@ -60,7 +60,8 @@ and layout; press Generate. The plan is then editable:
 - drag an interior wall to resize the rooms either side
 - select a wall to type the room size either side; select a door or window to
   type its width
-- Undo / Redo (Ctrl+Z / Ctrl+Y), Re-furnish, Save / Load as JSON
+- Re-furnish: each click shows the next good furniture arrangement
+- Undo / Redo (Ctrl+Z / Ctrl+Y), Save / Load as JSON
 - export DXF (millimetres, for AutoCAD and other CAD tools), SVG, or print to
   scale (1:50 / 1:100 / 1:200) and save as PDF
 

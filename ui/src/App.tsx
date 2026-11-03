@@ -211,8 +211,24 @@ export default function App() {
     return out;
   }, [plan, brief]);
 
+  // Each Re-furnish steps to the next good arrangement; the furniture search
+  // is deterministic, so the step count is what makes the result differ.
+  const furnishStep = useRef(0);
+  useEffect(() => {
+    furnishStep.current = 0;
+  }, [history?.plans[0]]);
   const refurnish = () => {
-    if (plan && brief) commit({ ...plan, furniture: placeFurniture(plan, brief.wallThickness) });
+    if (!plan || !brief) return;
+    const same = JSON.stringify(plan.furniture ?? []);
+    // Skip a step that lands on what is already there.
+    for (let k = 0; k < 12; k++) {
+      furnishStep.current += 1;
+      const furniture = placeFurniture(plan, brief.wallThickness, furnishStep.current);
+      if (JSON.stringify(furniture) !== same) {
+        commit({ ...plan, furniture });
+        return;
+      }
+    }
   };
 
   const schedule = useMemo(() => (plan && brief && !plan.infeasible ? areaSchedule(plan, brief) : null), [plan, brief]);

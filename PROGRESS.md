@@ -330,7 +330,12 @@ then state bye-laws).
 - `Editor.tsx` was found blanked to NUL bytes after an interrupted session; it
   was unchanged since the last commit and restored from git.
 
-Tests: 25 pass.
+- **Re-furnish cycles** through good alternatives: the beam keeps at most 3
+  layouts per arrangement (which wall each piece is on) so alternatives
+  survive, and each click picks the next distinct arrangement scoring within
+  2.5 of the best, per room.
+
+Tests: 26 pass.
 
 ## Next task
 

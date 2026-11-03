@@ -83,9 +83,12 @@ const FURNISH: Partial<Record<RoomType, Spec[]>> = {
     { role: 'wardrobe', mount: 'wall', value: 2, tall: true, variants: [1.8, 1.5, 1.2, 0.9].map((l) => mk('wardrobe', l, 0.6, front(0.7))) },
     { role: 'desk', mount: 'wall', value: 0.6, variants: [1.2, 1.0].map((l) => mk('desk', l, 0.55, front(0.75))) },
   ],
+  // The WC is placed first and is worth the most: a bath that drops it to fit
+  // a shower is the wrong trade. A tight bath gets a WC with 50 cm in front
+  // rather than none.
   bath: [
+    { role: 'wc', mount: 'wall', value: 5, variants: [mk('wc', 0.4, 0.7, front(0.6), sides(0.2, true)), mk('wc', 0.4, 0.68, front(0.5), sides(0.18, true))] },
     { role: 'shower', mount: 'wall', value: 3, variants: [mk('shower', 0.9, 0.9, front(0.6)), mk('shower', 0.8, 0.8, front(0.55))] },
-    { role: 'wc', mount: 'wall', value: 3, variants: [mk('wc', 0.4, 0.7, front(0.6), sides(0.2, true))] },
     { role: 'basin', mount: 'wall', value: 2, variants: [mk('basin', 0.55, 0.45, front(0.6)), mk('basin', 0.45, 0.4, front(0.55))] },
   ],
   kitchen: [
@@ -98,7 +101,7 @@ const FURNISH: Partial<Record<RoomType, Spec[]>> = {
       role: 'sofa', mount: 'wall', value: 5,
       variants: [mk('sofaSet', 2.2, 1.85, front(0.5)), mk('sofaSet', 1.8, 1.85, front(0.5)), mk('sofa', 2.2, 0.9, front(0.8)), mk('sofa', 1.6, 0.85, front(0.8))],
     },
-    { role: 'tv', mount: 'wall', value: 0.5, variants: [mk('tv', 1.6, 0.4, front(0.6)), mk('tv', 1.2, 0.4, front(0.6))] },
+    { role: 'tv', mount: 'wall', value: 2, variants: [mk('tv', 1.6, 0.4, front(0.6)), mk('tv', 1.2, 0.4, front(0.6))] },
     { role: 'armchair', mount: 'free', value: 0.2, variants: [mk('armchair', 0.8, 0.8, front(0.3))] },
   ],
   dining: [
@@ -115,7 +118,11 @@ const GAP = 0.05;
 /** Candidate positions are tried on this grid, in metres. */
 const STEP = 0.1;
 /** Partial layouts kept per room between pieces. */
-const BEAM = 12;
+const BEAM = 16;
+/** Of those, at most this many may share one arrangement, so alternatives survive to the end. */
+const PER_ARRANGEMENT = 3;
+/** An alternative is offered only if it scores within this of the best. */
+const ALT_SLACK = 2.5;
 const CELL = 0.1;
 
 const overlaps = (a: Rect, b: Rect) =>
@@ -419,6 +426,13 @@ function sideRuns(part: Rect, segs: { x1: number; y1: number; x2: number; y2: nu
   return out;
 }
 
+/**
+ * Which wall each piece stands against (or, free-standing, roughly where):
+ * two layouts with the same arrangement only differ by a nudge.
+ */
+const arrangementOf = (placed: Placed[]) =>
+  placed.map((p) => `${p.v.kind}:${p.side ?? `${p.facing}@${Math.round(p.rect.x / 0.5)},${Math.round(p.rect.y / 0.5)}`}`).join('|');
+
 const keyOf = (placed: Placed[]) =>
   placed.map((p) => `${p.v.kind}${p.facing}${Math.round(p.rect.x / 0.3)},${Math.round(p.rect.y / 0.3)}`).join('|');
 
@@ -429,10 +443,15 @@ const keyOf = (placed: Placed[]) =>
  * door wall, TV facing the sofa, sink–hob–fridge triangle), and the finalists
  * are re-ranked on walkways from the door. Deterministic: the same plan always
  * gets the same furniture, and a piece that fits nowhere is left out.
+ *
+ * `variant` picks among a room's good alternative arrangements: 0 is the best,
+ * and each step after it the next distinct arrangement scoring within
+ * ALT_SLACK of the best, cycling. Rooms with one good arrangement keep it.
  */
 export function placeFurniture(
   plan: { rooms: Room[]; doors: DoorSeg[]; windows: WindowSeg[] },
   wallThickness: number,
+  variant = 0,
 ): Furniture[] {
   const out: Furniture[] = [];
   const half = wallThickness / 2;
@@ -473,18 +492,39 @@ export function placeFurniture(
           for (const c of candidates(ctx, spec, v, rank)) if (fits(ctx, st.placed, c)) keep([...st.placed, c]);
         });
       }
-      beam = [...next.entries()]
-        .sort((a, b) => b[1].s - a[1].s || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
-        .slice(0, BEAM)
-        .map(([, st]) => st);
+      const ranked = [...next.entries()].sort((a, b) => b[1].s - a[1].s || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+      const per = new Map<string, number>();
+      beam = [];
+      for (const [, st] of ranked) {
+        if (beam.length >= BEAM) break;
+        const a = arrangementOf(st.placed);
+        const n = per.get(a) ?? 0;
+        if (n >= PER_ARRANGEMENT) continue;
+        per.set(a, n + 1);
+        beam.push(st);
+      }
     }
 
-    let best: Placed[] = [];
-    let bestScore = -Infinity;
+    // Best total per arrangement, then the good ones in order.
+    const byArrangement = new Map<string, { placed: Placed[]; total: number }>();
     for (const st of beam) {
       const total = st.s + walkway(ctx, st.placed);
-      if (total > bestScore + 1e-9) { best = st.placed; bestScore = total; }
+      const a = arrangementOf(st.placed);
+      const was = byArrangement.get(a);
+      if (!was || total > was.total + 1e-9) byArrangement.set(a, { placed: st.placed, total });
     }
+    const options = [...byArrangement.entries()]
+      .sort((a, b) => b[1].total - a[1].total || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+      .map(([, o]) => o);
+    // An alternative must hold every piece the best one does: a bath that
+    // swaps its WC for a better-scoring shower position is not an option.
+    const roles = (o: { placed: Placed[] }) => new Set(o.placed.map((p) => p.spec.role));
+    const must = options.length ? roles(options[0]) : new Set<Role>();
+    const good = options.filter((o) => {
+      const has = roles(o);
+      return o.total >= (options[0]?.total ?? 0) - ALT_SLACK && [...must].every((r) => has.has(r));
+    });
+    const best = good.length ? good[variant % good.length].placed : [];
     for (const p of best) {
       out.push({ kind: p.v.kind, roomId: room.id, rect: p.rect, facing: p.facing, len: p.v.len, depth: p.v.depth });
     }
