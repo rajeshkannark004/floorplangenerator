@@ -58,9 +58,15 @@ and layout; press Generate. The plan is then editable:
 - drag furniture (R rotates, Del deletes; red means it clashes)
 - slide doors and windows along their wall, drag their end dots to resize
 - drag an interior wall to resize the rooms either side
+- select a wall to type the room size either side; select a door or window to
+  type its width
 - Undo / Redo (Ctrl+Z / Ctrl+Y), Re-furnish, Save / Load as JSON
+- export DXF (millimetres, for AutoCAD and other CAD tools), SVG, or print to
+  scale (1:50 / 1:100 / 1:200) and save as PDF
 
-Validation problems are listed under the sheet and update on every edit.
+Dimension lines run round the plan and update as you edit. Under the sheet:
+validation problems, and an area schedule (carpet and built-up area in m² and
+sq ft, ground coverage, FAR) with CSV download.
 
 ## How it works
 
@@ -79,6 +85,7 @@ Validation problems are listed under the sheet and update on every edit.
 6. `furniture.ts` — furnishes each room with a beam search over positions,
    scored on clearances, room-specific rules and walkways from the door.
 7. `edit.ts` — the pure edit operations behind the UI editor.
+8. `schedule.ts` and `dxf.ts` — the area schedule and the DXF export.
 
 Same seed plus same brief always produces the same plan.
 

@@ -226,6 +226,10 @@ blogs, academic reviews and contract samples, so read them as directional.
 
 Order: quick wins first — 5, 1, 4 — then 3, then 2, then 6 and 7.
 
+Status (03/11/2026): **5, 1 and 4 are done** — area schedule with CSV,
+dimension chains with typed sizes, DXF / SVG / scaled-PDF export. Details and
+checks in PROGRESS.md. Next is 3.
+
 The rule pack values for 3 must come from the code text (NBC 2016 Part 3 and
 Part 8, and the state bye-law in use), not from secondary sources; each rule
 carries its clause reference.

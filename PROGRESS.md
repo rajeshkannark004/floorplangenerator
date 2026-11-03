@@ -303,11 +303,39 @@ Researched architects' pain points; the list and order are in PLAN.md,
 *Architect pain points*. Compliance will follow **Indian norms** (NBC 2016,
 then state bye-laws).
 
+### Pain-point quick wins (03/11/2026)
+
+- **Area schedule** (`schedule.ts`): per room size, area to centrelines and
+  carpet area (clear floor: area − perimeter × t/2 + t², exact for any
+  rectilinear room); totals for carpet, built-up (outer wall faces), plot,
+  ground coverage, FAR (single storey), efficiency. m² and sq ft. Shown under
+  the sheet, CSV download (UTF-8 BOM so Excel reads m²).
+- **Dimension lines** (`dimensionChains` in `render-svg.ts`): a chain on every
+  side through each wall that meets it, overall dimensions top and left. They
+  redraw live while dragging. Typed sizes in the editor: select a wall to type
+  the room size either side; select a door or window to type its width.
+- **Export**: DXF (`dxf.ts`, AutoCAD R12, millimetres; layers WALLS, DOORS,
+  WINDOWS, FURNITURE, TEXT, DIMS, PLOT; walls broken at openings). Scaled PDF
+  through the browser print dialog: 1:50, 1:100 or 1:200 on the smallest ISO
+  sheet that fits. SVG download.
+- Furniture symbols are now drawing primitives, so the sheet and the DXF draw
+  the same thing; the door swing side is shared the same way.
+- Checked: DXF read back and redrawn from the file (555 lines, 9 arcs for 9
+  doors, 10 circles, 32 texts); print page captured and rendered to PDF —
+  A4 portrait, sheet 126.09 mm wide for 12.61 m, so 1:100 holds. Typed wall
+  size moved the wall and the validator flagged the narrowed bedroom.
+- Known: wall outlines in the DXF overlap at junctions (no wall cleanup);
+  DXF dimensions are plain lines and text, not DIMENSION entities; PDF needs
+  "print at 100%" in the dialog.
+- `Editor.tsx` was found blanked to NUL bytes after an interrupted session; it
+  was unchanged since the last commit and restored from git.
+
+Tests: 25 pass.
+
 ## Next task
 
-Pain points, quick wins first: room area schedule (carpet / built-up, CSV),
-live dimension lines with typed sizes, DXF and scaled PDF export. Then the
-Indian-norms compliance panel. The grid work below is still open.
+Indian-norms compliance panel (NBC 2016 first), then options side by side.
+The grid work below is still open.
 
 ### Earlier next task (02/11/2026)
 

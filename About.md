@@ -43,13 +43,17 @@ engine/src/shape.ts       rooms as unions of rectangles: shared edges, min width
 engine/src/furniture.ts   placeFurniture (per-room beam search), symbols, inDoorSwing
 engine/src/edit.ts        pure edit ops: setDoor, setWindow, moveWall, moveFurniture,
                           rotateFurniture, removeAt, furnitureClashes
-engine/src/render-svg.ts  Plan type, sheetFrame, renderSVG
+engine/src/schedule.ts    areaSchedule (carpet, built-up, coverage, FAR), scheduleCSV
+engine/src/dxf.ts         planDXF: AutoCAD R12 DXF in millimetres
+engine/src/render-svg.ts  Plan type, sheetFrame, dimensionChains, doorSwingSide, renderSVG
 engine/src/index.ts       generate(), infeasibleReason, re-exports
 demo.ts                   CLI: node dist/demo.js [seed] [attempts] [effort] -> out/plan.svg
-tests/engine.test.ts      22 node:test tests on the 2BHK demo brief
+tests/engine.test.ts      25 node:test tests on the 2BHK demo brief
 tools/stress.ts           6 briefs x seeds 1-8, resumable, stress-results.json
-ui/src/App.tsx            form, Generate button, toolbar, undo history, save/load
-ui/src/Editor.tsx         the editable drawing: engine SVG + a hit-target overlay
+ui/src/App.tsx            form, Generate button, toolbar, undo history, save/load, exports
+ui/src/Editor.tsx         the editable drawing: engine SVG + a hit-target overlay, typed sizes
+ui/src/Schedule.tsx       the area schedule table
+ui/src/exports.ts         file download, print to scale on the smallest ISO sheet
 ```
 
 ## How generation works
